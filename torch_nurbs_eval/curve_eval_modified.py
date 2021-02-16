@@ -117,24 +117,72 @@ def main():
 
 
 
-    ctrl_pts = dg.gen_control_points(1,8,degree=3) # include a channel for weights
-    layer = CurveEval(8, p=3, dimension=2)
+    
 
-    target_layer = CurveEval(8, p=3, dimension=2)
-    target = target_layer(ctrl_pts).detach()
-    target = target + 0.01*torch.randn_like(target)
+    # target_layer = CurveEval(8, p=3, dimension=2)
+    # target = target_layer(ctrl_pts).detach()
+    # target = target + 0.01*torch.randn_like(target)
     # target= dg.gen_evaluated_points(1,3,ctrl_pts,2)
     # target = torch.from_numpy(target)
 
 
     
     
-    print("ctrl pts size", ctrl_pts.shape)
-    print("target shape", target.shape)
+    # x = np.random.rand(64)
+    # y = np.tan(x)
+    # point_cloud =np.stack((x,y),axis=1)
+
+    # start = -1/2*np.pi + 0.01
+    # end = 1/2*np.pi -0.01
+    # x = torch.linspace(start = start, end = end, steps = 64)
+    # y = torch.tan(x)
+    x = np.pi**torch.rand(64)
+    y = torch.sin(x)
+    point_cloud = torch.stack((x,y), dim=1)
+    point_cloud = point_cloud.view(1,64,2)
+
+    x_cen = x.sum()/64.0
+    y_cen = y.sum()/64.0
+
+    curve_len = 0
+
+    for i in range(0,len(x)-1):
+        x_sq = (x[i+1].item()-x[i].item())**2
+        y_sq = (y[i+1].item()-y[i].item())**2
+
+        curve_len += np.sqrt(x_sq+y_sq)
 
 
-    # Compute and print loss
-    inp_ctrl_pts = torch.nn.Parameter(ctrl_pts)
+    
+
+    
+
+
+
+    ctrl_pts = dg.gen_control_points(1,8,x_cen,y_cen) # include a channel for weights
+    
+    layer = CurveEval(8, p=3, dimension=2)
+
+    
+
+
+
+
+    
+    
+
+
+    
+
+    
+    
+    # print("ctrl pts size", ctrl_pts.shape)
+    # # print("target shape", target.shape)
+    # print("point cloud", point_cloud.shape)
+
+
+    # # Compute and print loss
+    # # inp_ctrl_pts = torch.nn.Parameter(ctrl_pts)
     ctrl_pts[0,-1,:2] += 10*torch.rand(2)
     ctrl_pts[0,-2,:2] += 10*torch.rand(2)
     ctrl_pts[0,-3,:2] += 10*torch.rand(2)
@@ -143,18 +191,22 @@ def main():
     # 0.1*torch.rand(1,3,3)
 
     inp_ctrl_pts = torch.nn.Parameter(ctrl_pts)
-    # opt = torch.optim.SGD(iter([inp_ctrl_pts]), lr=1)
+    opt = torch.optim.SGD(iter([inp_ctrl_pts]), lr=0.01)
     for i in range(5000):
         out = layer(inp_ctrl_pts)
-        loss,_ = chamfer_distance(target, out)
+        # loss,_ = chamfer_distance(target, out)
+        loss,_ = chamfer_distance(point_cloud, out)
+        loss+=+0.5*curve_len
+          
         loss.backward()
         with torch.no_grad():
             inp_ctrl_pts[:,:, :2].sub_(1 * inp_ctrl_pts.grad[:, :, :2])
         if i%500 == 0:
             import matplotlib.pyplot as plt
-            target_mpl = target.numpy().squeeze()
+            # target_mpl = target.numpy().squeeze()
+            pc_mpl = point_cloud.numpy().squeeze()
             predicted = out.detach().numpy().squeeze()
-            plt.scatter(target_mpl[:,0], target_mpl[:,1], label='target')
+            plt.scatter(pc_mpl[:,0], pc_mpl[:,1], label='pointcloud', s=10, color='orange')
             plt.plot(predicted[:,0], predicted[:,1], label='predicted')
             # plt.plot(inp_ctrl_pts.detach().numpy()[0,:,0], inp_ctrl_pts.detach().numpy()[0,:,1], label='control points')
             plt.legend()

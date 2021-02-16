@@ -7,9 +7,16 @@ from geomdl.visualization import VisMPL
 
 
 
-def gen_control_points(no_of_curves,no_of_ctrl_pts,degree=3):
-    ctrl_pts = torch.rand(no_of_curves,no_of_ctrl_pts,3,requires_grad=True)
-    ctrl_pts[:,:,2] = 1.0
+def gen_control_points(no_of_curves,no_of_ctrl_pts,x_cen,y_cen):
+    # ctrl_pts = torch.rand(no_of_curves,no_of_ctrl_pts,3,requires_grad=True)
+    ctrl_pts_x = x_cen*torch.ones(no_of_ctrl_pts)
+    ctrl_pts_y = y_cen*torch.ones(no_of_ctrl_pts)
+    # ctrl_pts_y = np.pi*torch.linspace(0,1,steps=no_of_ctrl_pts,requires_grad=True)
+    ctrl_pts_z = torch.ones(no_of_ctrl_pts)
+    ctrl_pts = torch.stack([ctrl_pts_x,ctrl_pts_y,ctrl_pts_z], dim=1)
+    ctrl_pts = ctrl_pts.view(1,no_of_ctrl_pts,3)
+
+
     return ctrl_pts
 
 
