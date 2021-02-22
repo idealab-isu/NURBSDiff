@@ -7,14 +7,17 @@ from geomdl.visualization import VisMPL
 
 
 
-def gen_control_points(no_of_curves,no_of_ctrl_pts,x_cen,y_cen):
-    # ctrl_pts = torch.rand(no_of_curves,no_of_ctrl_pts,3,requires_grad=True)
-    ctrl_pts_x = x_cen*torch.ones(no_of_ctrl_pts)
-    ctrl_pts_y = y_cen*torch.ones(no_of_ctrl_pts)
+
+def gen_control_points(no_of_curves,no_of_ctrl_pts):
+    ctrl_pts = torch.rand(no_of_curves,no_of_ctrl_pts,3,requires_grad=True)
+    # ctrl_pts_x = x_cen*torch.ones(no_of_ctrl_pts)
+    # ctrl_pts_y = y_cen*torch.ones(no_of_ctrl_pts)
+
     # ctrl_pts_y = np.pi*torch.linspace(0,1,steps=no_of_ctrl_pts,requires_grad=True)
-    ctrl_pts_z = torch.ones(no_of_ctrl_pts)
-    ctrl_pts = torch.stack([ctrl_pts_x,ctrl_pts_y,ctrl_pts_z], dim=1)
-    ctrl_pts = ctrl_pts.view(1,no_of_ctrl_pts,3)
+    # ctrl_pts_w = torch.ones(no_of_ctrl_pts)
+    ctrl_pts[:,:,2] = torch.ones(no_of_ctrl_pts)
+    # ctrl_pts = torch.stack([ctrl_pts_x,ctrl_pts_y,ctrl_pts_w], dim=1)
+    # ctrl_pts = ctrl_pts.view(1,no_of_ctrl_pts,3)
 
 
     return ctrl_pts

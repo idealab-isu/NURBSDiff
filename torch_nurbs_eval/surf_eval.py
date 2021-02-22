@@ -135,7 +135,7 @@ class SurfEvalFunc(torch.autograd.Function):
         grad_sw = torch.zeros((grad_output.size(0),grad_output.size(1),grad_output.size(2),_dimension+1))
         grad_sw[:,:,:,:_dimension] = grad_output
         for d in range(_dimension):
-            grad_cw[:,:,:,_dimension] += grad_output[:,:,:,d]/surfaces[:,:,:,_dimension]
+            grad_sw[:,:,:,_dimension] += grad_output[:,:,:,d]/surfaces[:,:,:,_dimension]
         grad_ctrl_pts  = backward(grad_sw, ctrl_pts, uspan_uv, vspan_uv, Nu_uv, Nv_uv, u_uv, v_uv, m, n, p, q, _dimension)
         return Variable(grad_ctrl_pts[0]), None, None, None, None, None, None,None,None,None,None,None,None
 
