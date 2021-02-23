@@ -8,9 +8,9 @@ This is the command to install all the dependencies...
 * `conda env create -f environment.yml`
 * `conda activate nurbseval`
 * If not already installed via the environment file install Pytorch3D by:
- `pip install "git+https://github.com/facebookresearch/pytorch3d.git" `
+* `pip install "git+https://github.com/facebookresearch/pytorch3d.git" `
 * If not already installed via the environment file install NURBS-python by:
- `pip install geomdl`
+* `pip install geomdl`
 
 # Installation of the package
 The following commands need to be modified to compile the code successfully, with pytorch code as well.
