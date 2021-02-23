@@ -1,5 +1,5 @@
 # TorchNURBSEval
-This repo contains code for fitting a curve to any input point cloud.
+This repo contains code for fitting curves and surfaces to any input point cloud.
 
 # Requirements and Install dependencies
 All requirements updated in the environment.yml in the parent folder of the git repository.
