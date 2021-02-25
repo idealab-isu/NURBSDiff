@@ -183,22 +183,43 @@ def main():
         with torch.no_grad():
             inp_ctrl_pts[:,:,:,:3].sub_(1 * inp_ctrl_pts.grad[:, :, :,:3])
             
-        if i%50 == 0:
+        if i%5 == 0:
             import matplotlib.pyplot as plt
-            from mpl_toolkits.mplot3d import Axes3D  
-            fig = plt.figure()
-            ax = fig.add_subplot(111, projection='3d')
+            from mpl_toolkits.mplot3d import Axes3D 
+            from matplotlib import cm 
+            # fig = plt.figure()
+            # ax = fig.add_subplot(111, projection='3d')
+
+            target = target.view(1,64,64,3)
+            out = out.view(1,64,64,3)
 
             target_mpl = target.numpy().squeeze()
-            ax.scatter(target_mpl[:,0],target_mpl[:,1],target_mpl[:,2], label='pointcloud', color='blue')
+            # ax.scatter(target_mpl[:,0],target_mpl[:,1],target_mpl[:,2], label='pointcloud', color='blue')
 
             predicted = out.detach().numpy().squeeze()
-            ax.scatter(predicted[:,0], predicted[:,1], predicted[:,2], label='predicted', s=10, color='orange')
+            # ax.scatter(predicted[:,0], predicted[:,1], predicted[:,2], label='predicted', s=10, color='orange')
             
+            # ax.set_xlabel('X Label')
+            # ax.set_ylabel('Y Label')
+            # ax.set_zlabel('Z Label')
+
+            # plt.show()
+
+
+
+            fig = plt.figure()
+            # fig.figsize = 
+            ax = fig.gca(projection='3d')
+
+            surf1 = ax.plot_surface(target_mpl[:,0],target_mpl[:,1],target_mpl[:,2], cmap=cm.winter,linewidth=0.5, antialiased=False)
+            surf2 = ax.plot_surface(predicted[:,0], predicted[:,1], predicted[:,2], cmap=cm.autumn,linewidth=0.5, antialiased=False)
             ax.set_xlabel('X Label')
             ax.set_ylabel('Y Label')
             ax.set_zlabel('Z Label')
-            plt.show()
+           
+           
+           
+           
             # break
             # # pc_mpl = point_cloud.numpy().squeeze()
             # # plt.plot(predicted[:,:,0], predicted[:,:,1], label='predicted')
@@ -207,7 +228,7 @@ def main():
             # # plt.show()
             # ax.legend()
             # ax.view_init(elev=20., azim=-35)
-            # plt.show()
+            plt.show()
 
         
         inp_ctrl_pts.grad.zero_()
