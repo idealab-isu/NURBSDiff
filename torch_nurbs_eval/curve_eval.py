@@ -89,16 +89,16 @@ class CurveEvalFunc(torch.autograd.Function):
         p = ctx.p
         _dimension = ctx._dimension
         curves = ctx.curves
-        print("Gradient curves")
-        print(grad_output)
+        # print("Gradient curves")
+        # print(grad_output)
         grad_cw = torch.zeros((grad_output.size(0),grad_output.size(1),_dimension+1))
         grad_cw[:,:,:_dimension] = grad_output
         for d in range(_dimension):
             grad_cw[:,:,_dimension] += grad_output[:,:,d]/curves[:,:,_dimension]
         grad_ctrl_pts  = backward(grad_cw, ctrl_pts, uspan, Nu, u, m, p, _dimension)
 
-        print("Gradient control points")
-        print(grad_ctrl_pts)
+        # print("Gradient control points")
+        # print(grad_ctrl_pts)
         return Variable(grad_ctrl_pts[0]), None, None, None, None, None, None
 
 
@@ -156,7 +156,6 @@ def main():
 
 
     ctrl_pts = dg.gen_control_points(1,8) # include a channel for weights
-    
     layer = CurveEval(8, p=3, dimension=2, out_dim=128)
     
 
@@ -184,8 +183,12 @@ def main():
     inp_ctrl_pts[0,2,:2] += 10*torch.rand(2)
     inp_ctrl_pts[0,-3,:2] += 10*torch.rand(2)
     inp_ctrl_pts = torch.nn.Parameter(inp_ctrl_pts)
+
+
     target_layer = CurveEval(8, p=3, dimension=2, out_dim=128)
     target = target_layer(ctrl_pts).detach()
+
+
     # target = target + 0.01*torch.randn_like(target)
 
 
@@ -208,16 +211,20 @@ def main():
 
     # inp_ctrl_pts = torch.nn.Parameter(ctrl_pts)
     opt = torch.optim.SGD(iter([inp_ctrl_pts]), lr=0.01)
-    for i in range(5000):
+    for i in range(3):
         out = layer(inp_ctrl_pts)
+        print(target.shape)
+        print(out.shape)
         loss,_ = chamfer_distance(target, out)
+        print(loss)
         # loss,_ = chamfer_distance(point_cloud, out)
         curve_length = ((out[:,0:-1,:] - out[:,1:,:])**2).sum((1,2)).mean()
-        loss+=0.05*curve_length
+        loss+=0.5*curve_length
           
         loss.backward()
         with torch.no_grad():
             inp_ctrl_pts[:,:, :2].sub_(1 * inp_ctrl_pts.grad[:, :, :2])
+        
         if i%500 == 0:
             import matplotlib.pyplot as plt
             target_mpl = target.numpy().squeeze()
@@ -229,8 +236,9 @@ def main():
             plt.legend()
             plt.show()
 
-        # opt.zero_grad()
         # opt.step()
+        # opt.zero_grad()
+
         inp_ctrl_pts.grad.zero_()
         print("loss", loss)
 

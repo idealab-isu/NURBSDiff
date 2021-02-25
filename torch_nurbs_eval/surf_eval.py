@@ -5,8 +5,11 @@ from torch.autograd import Variable
 import torch
 import numpy as np
 from surf_eval_cpp import pre_compute_basis, forward, backward
+import surface_data_generator as dg
 import time
-torch.manual_seed(42)
+torch.manual_seed(120)
+from tqdm import tqdm
+from pytorch3d.loss import chamfer_distance
 
 def gen_knot_vector(p,n):
 
@@ -39,7 +42,7 @@ class SurfEval(torch.nn.Module):
         super(SurfEval, self).__init__()
         self.m = m
         self.n = n
-        self._dimension = 3
+        self._dimension = dimension
         self.p, self.q = p, q
         self.U = torch.Tensor(np.array(gen_knot_vector(self.p, self.m)))
         self.V = torch.Tensor(np.array(gen_knot_vector(self.q, self.n)))
@@ -143,20 +146,89 @@ class SurfEvalFunc(torch.autograd.Function):
 
 def main():
     timing = []
-    for _ in range(10):
-        ctrl_pts = torch.rand(32,8,8,4, requires_grad=True) # include a channel for weights
-        start = time.time()
-        layer = SurfEval(8,8, p=2, q=2)
-        out = layer(ctrl_pts)
-        y_pred = torch.rand(32,64,64,3)
 
-        # Compute and print loss
-        loss = (y_pred - out).pow(2).sum()
+    ctrl_pts = dg.gen_control_points(1,16,16,3)
+    # print(ctrl_pts.shape)
+    layer = SurfEval(16,16,3,3,3,64)
+
+    print(layer)
+
+    inp_ctrl_pts = ctrl_pts.detach().clone()
+    inp_ctrl_pts[0,-1,-1,:3] += 10*torch.rand(3)
+    inp_ctrl_pts[0,2,2,:3] += 10*torch.rand(3)
+    inp_ctrl_pts[0,-3,-3,:3] += 10*torch.rand(3)
+    inp_ctrl_pts = torch.nn.Parameter(inp_ctrl_pts)
+
+
+
+    target_layer = SurfEval(16,16,3,3,3,64)
+    target = target_layer(ctrl_pts).detach()
+
+    print(target.shape)
+
+    opt = torch.optim.SGD(iter([inp_ctrl_pts]), lr=0.01)
+    for i in range(5000):
+        out = layer(inp_ctrl_pts)
+        target = target.view(1,64*64,3)
+        out = out.view(1,64*64,3)
+        print(target.shape, out.shape)
+        loss,_ = chamfer_distance(target, out)
+        print(loss)
+
+        #add regularizer
+        # surface_area = 
+        # loss += 0.5 * surface_area
+
         loss.backward()
-        end = time.time()
-        timing.append(end-start)
-        print(out.size(), (end-start))
-    print(np.mean(timing))
+        with torch.no_grad():
+            inp_ctrl_pts[:,:,:,:3].sub_(1 * inp_ctrl_pts.grad[:, :, :,:3])
+            
+        if i%50 == 0:
+            import matplotlib.pyplot as plt
+            from mpl_toolkits.mplot3d import Axes3D  
+            fig = plt.figure()
+            ax = fig.add_subplot(111, projection='3d')
+
+            target_mpl = target.numpy().squeeze()
+            ax.scatter(target_mpl[:,0],target_mpl[:,1],target_mpl[:,2], label='pointcloud', color='blue')
+
+            predicted = out.detach().numpy().squeeze()
+            ax.scatter(predicted[:,0], predicted[:,1], predicted[:,2], label='predicted', s=10, color='orange')
+            
+            ax.set_xlabel('X Label')
+            ax.set_ylabel('Y Label')
+            ax.set_zlabel('Z Label')
+            plt.show()
+            # break
+            # # pc_mpl = point_cloud.numpy().squeeze()
+            # # plt.plot(predicted[:,:,0], predicted[:,:,1], label='predicted')
+            # # plt.plot(inp_ctrl_pts.detach().numpy()[0,:,0], inp_ctrl_pts.detach().numpy()[0,:,1], label='control points')
+            # # plt.legend()
+            # # plt.show()
+            # ax.legend()
+            # ax.view_init(elev=20., azim=-35)
+            # plt.show()
+
+        
+        inp_ctrl_pts.grad.zero_()
+        print("loss", loss)
+
+
+
+    # for _ in range(10000):
+    #     ctrl_pts = torch.rand(1,8,8,4, requires_grad=True) # include a channel for weights
+    #     start = time.time()
+    #     layer = SurfEval(8,8, p=3, q=3)
+    #     out = layer(ctrl_pts)
+    #     y_pred = torch.rand(1,64,64,3)
+
+    #     # Compute and print loss
+    #     loss = (y_pred - out).pow(2).sum()
+    #     loss.backward()
+    #     end = time.time()
+    #     timing.append(end-start)
+    #     print(out.size(), (end-start))
+    # print(np.mean(timing))
 
 if __name__ == '__main__':
     main()
