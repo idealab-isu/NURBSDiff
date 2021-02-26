@@ -151,12 +151,20 @@ def main():
     # print(ctrl_pts.shape)
     layer = SurfEval(16,16,3,3,3,64)
 
+    ctrl_pts_2 = np.load('../CNTRL_PTS_2_Chamber.npy')
+    ctrl_pts_2[:,:,:,-1] = 1.0
+    temp = np.reshape(ctrl_pts_2, [200, 972, 4, 4, 4])
+    isolate_pts = torch.from_numpy(temp[0, 1:2, :, :, :])
+
+    # layer = SurfEval(4, 4, 3, 3, 3, 64)
+    # eval_pts = layer(isolate_pts)
+
     print(layer)
 
-    inp_ctrl_pts = ctrl_pts.detach().clone()
-    inp_ctrl_pts[0,-1,-1,:3] += 10*torch.rand(3)
-    inp_ctrl_pts[0,2,2,:3] += 10*torch.rand(3)
-    inp_ctrl_pts[0,-3,-3,:3] += 10*torch.rand(3)
+    inp_ctrl_pts = isolate_pts
+    # inp_ctrl_pts[0,-1,-1,:3] += 10*torch.rand(3)
+    # inp_ctrl_pts[0,2,2,:3] += 10*torch.rand(3)
+    # inp_ctrl_pts[0,-3,-3,:3] += 10*torch.rand(3)
     inp_ctrl_pts = torch.nn.Parameter(inp_ctrl_pts)
 
 
