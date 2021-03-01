@@ -38,11 +38,11 @@ std::vector<torch::Tensor> surf_pre_compute_basis(torch::Tensor u,
     for (auto j=0; j<v.size(0); j++)
     {
       auto uspan = find_span(n, p, u[i].item<float>(), U_ptr);
-      auto vspan = find_span(m, q, v[i].item<float>(), V_ptr);
+      auto vspan = find_span(m, q, v[j].item<float>(), V_ptr);
       auto Nu_tensor = torch::zeros({p+1});
       auto Nv_tensor = torch::zeros({q+1});
       basis_funs(uspan, u[i].item<float>(), p, U_ptr, (float*)Nu_tensor.data_ptr());
-      basis_funs(vspan, v[i].item<float>(), q, V_ptr, (float*)Nv_tensor.data_ptr());
+      basis_funs(vspan, v[j].item<float>(), q, V_ptr, (float*)Nv_tensor.data_ptr());
       uspan_v.push_back(uspan);
       vspan_v.push_back(vspan);
       Nu_v.push_back(Nu_tensor);
