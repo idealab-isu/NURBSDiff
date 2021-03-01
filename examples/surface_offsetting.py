@@ -7,6 +7,7 @@ from torch_nurbs_eval.surf_eval import SurfEval
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
 from matplotlib import cm
+import offset_eval as off
 
 
 def main():
@@ -15,19 +16,15 @@ def main():
 
     num_ctrl_pts1 = 4
     num_ctrl_pts2 = 4
-    inp_ctrl_pts = torch.nn.Parameter(torch.rand(1,num_ctrl_pts1, num_ctrl_pts2, 3))
-
-    x = y = np.linspace(-1,1,num=64)
-    X, Y = np.meshgrid(x, y)
-
-    def fun(X,Y):
-        Z = np.sin(X)*np.cos(Y)
-        return Z
-
-    zs = np.array(fun(np.ravel(X), np.ravel(Y)))
-    Z = zs.reshape(X.shape)
-    target = torch.from_numpy(np.array([X,Y,Z]).T)
-    print(target.shape)
+    ctrl_pts_2 = np.load('CNTRL_PTS_2_Chamber.npy').astype('float32')
+    ctrl_pts_2[:,:,:,-1] = 1.0
+    temp = np.reshape(ctrl_pts_2, [200, 972, num_ctrl_pts1, num_ctrl_pts2, 4])
+    isolate_pts = torch.from_numpy(temp[0, 1:2, :, :, :3])
+    inp_ctrl_pts = torch.nn.Parameter(isolate_pts)
+    knot_u = np.array([0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0])
+    knot_v = np.array([0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0])
+    off_pts = off.compute_surf_offset(1, ctrl_pts_2[0, 0], knot_u, knot_v, 3, 3)
+    target = torch.from_numpy(off_pts)
 
     layer = SurfEval(num_ctrl_pts1, num_ctrl_pts2, 3, 3, 3, 64)
     opt = torch.optim.Adam(iter([inp_ctrl_pts]), lr=0.01)
