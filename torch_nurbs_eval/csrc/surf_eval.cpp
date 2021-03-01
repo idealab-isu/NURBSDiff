@@ -132,19 +132,18 @@ std::vector<torch::Tensor> surf_backward(
     {
       for (int i=0; i<u_uv.size(0); i++)
       {
-        auto grad_temp = grad_output[k];
+        auto grad_temp = torch::zeros({q+1,_dimension+1});
         for (int l = 0; l<=q; l++)
         {
+          grad_temp[l] = Nv_uv[i][j][l]*grad_output[k][i][j];
           for (int r = 0; r<=p; r++)
           {
-            grad_ctrl_pts[k][uspan_uv[i][j].item<int>() - p + r][vspan_uv[i][j].item<int>() - q + l] = grad_ctrl_pts[k][uspan_uv[i][j].item<int>() - p + r][vspan_uv[i][j].item<int>() - q + l] + Nu_uv[i][j][r].item<float>()*grad_temp[i][j];
+            grad_ctrl_pts[k][uspan_uv[i][j].item<int>() - p + r][vspan_uv[i][j].item<int>() - q + l] = grad_ctrl_pts[k][uspan_uv[i][j].item<int>() - p + r][vspan_uv[i][j].item<int>() - q + l] + Nu_uv[i][j][r].item<float>()*grad_temp[l];
           }
         }
-
       }
     }
   }
-
   return {grad_ctrl_pts};
 }
 
