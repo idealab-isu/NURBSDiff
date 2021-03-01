@@ -4,12 +4,8 @@ from torch.autograd import Function
 from torch.autograd import Variable
 import torch
 import numpy as np
-from curve_eval_cpp import pre_compute_basis, forward, backward
+from torch_nurbs_eval.curve_eval_cpp import pre_compute_basis, forward, backward
 import time
-import data_generator as dg
-torch.manual_seed(120)
-from tqdm import tqdm
-from pytorch3d.loss import chamfer_distance
 
 
 def gen_knot_vector(p,n):
@@ -75,7 +71,6 @@ class CurveEvalFunc(torch.autograd.Function):
         # ctrl_pts[:,:,:_dimension] = ctrl_pts[:,:,:_dimension]*ctrl_pts[:,:,_dimension].unsqueeze(-1)
         curves = forward(ctrl_pts, uspan, Nu, u, m, p, _dimension)
         ctx.curves = curves
-        print("curves shape", curves.shape)
         return curves[:,:,:_dimension]/curves[:,:,_dimension].unsqueeze(-1)
         # return curves[:,:,:_dimension]
 
@@ -103,145 +98,7 @@ class CurveEvalFunc(torch.autograd.Function):
 
 
 def main():
-    timing = []
-    # with open('ctrl_pts.npy', 'rb') as f:
-    #     ctrl_pts=np.load(f)
-    # with open('weights.npy','rb') as f1:
-    #     weights=np.load(f1)
-    # with open('evaluated_pts.npy','rb') as f2:
-    #     y_pred=np.load(f2)
-    #
-    # ctrl_pts=np.dstack((ctrl_pts,weights))
-    # ctrl_pts=Variable(torch.from_numpy(ctrl_pts).float(),requires_grad=True)
-    # y_pred=torch.from_numpy(y_pred)
-
-
-
-    
-
-    
-
-
-    
-    
-    # x = np.random.rand(64)
-    # y = np.tan(x)
-    # point_cloud =np.stack((x,y),axis=1)
-
-    # start = -1/2*np.pi + 0.01
-    # end = 1/2*np.pi -0.01
-    # x = torch.linspace(start = start, end = end, steps = 64)
-    # y = torch.tan(x)
-    # x = 2*np.pi*torch.rand(64)
-    # y = torch.sin(x)
-    # point_cloud = torch.stack((x,y), dim=1)
-    # point_cloud = point_cloud.view(1,64,2)
-
-    # x_cen = x.sum()/64.0
-    # y_cen = y.sum()/64.0
-
-    # curve_len = 0
-
-    # for i in range(0,len(x)-1):
-    #     x_sq = (x[i+1].item()-x[i].item())**2
-    #     y_sq = (y[i+1].item()-y[i].item())**2
-
-    #     curve_len += np.sqrt(x_sq+y_sq)
-
-
-    
-
-    
-
-
-
-    ctrl_pts = dg.gen_control_points(1,8) # include a channel for weights
-    layer = CurveEval(8, p=3, dimension=2, out_dim=128)
-    
-
-    
-
-
-
-
-    
-    
-
-
-    
-
-    
-    
-    # print("ctrl pts size", ctrl_pts.shape)
-    # # print("target shape", target.shape)
-    # print("point cloud", point_cloud.shape)
-
-
-    # # Compute and print loss
-    inp_ctrl_pts = ctrl_pts.detach().clone()
-    inp_ctrl_pts[0,-1,:2] += 10*torch.rand(2)
-    inp_ctrl_pts[0,2,:2] += 10*torch.rand(2)
-    inp_ctrl_pts[0,-3,:2] += 10*torch.rand(2)
-    inp_ctrl_pts = torch.nn.Parameter(inp_ctrl_pts)
-
-
-    target_layer = CurveEval(8, p=3, dimension=2, out_dim=128)
-    target = target_layer(ctrl_pts).detach()
-
-
-    # target = target + 0.01*torch.randn_like(target)
-
-
-
-
-
-
-
-
-
-
-
-
-
-    # target= dg.gen_evaluated_points(1,3,ctrl_pts[0,:,:],2)
-    # target = torch.from_numpy(target)
-
-    # ctrl_pt
-    # 0.1*torch.rand(1,3,3)
-
-    # inp_ctrl_pts = torch.nn.Parameter(ctrl_pts)
-    opt = torch.optim.SGD(iter([inp_ctrl_pts]), lr=0.01)
-    for i in range(3):
-        out = layer(inp_ctrl_pts)
-        print(target.shape)
-        print(out.shape)
-        loss,_ = chamfer_distance(target, out)
-        print(loss)
-        # loss,_ = chamfer_distance(point_cloud, out)
-        curve_length = ((out[:,0:-1,:] - out[:,1:,:])**2).sum((1,2)).mean()
-        loss+=0.5*curve_length
-          
-        loss.backward()
-        with torch.no_grad():
-            inp_ctrl_pts[:,:, :2].sub_(1 * inp_ctrl_pts.grad[:, :, :2])
-        
-        if i%500 == 0:
-            import matplotlib.pyplot as plt
-            target_mpl = target.numpy().squeeze()
-            # pc_mpl = point_cloud.numpy().squeeze()
-            predicted = out.detach().numpy().squeeze()
-            plt.scatter(target_mpl[:,0], target_mpl[:,1], label='pointcloud', s=10, color='orange')
-            plt.plot(predicted[:,0], predicted[:,1], label='predicted')
-            # plt.plot(inp_ctrl_pts.detach().numpy()[0,:,0], inp_ctrl_pts.detach().numpy()[0,:,1], label='control points')
-            plt.legend()
-            plt.show()
-
-        # opt.step()
-        # opt.zero_grad()
-
-        inp_ctrl_pts.grad.zero_()
-        print("loss", loss)
-
+    pass
 
 if __name__ == '__main__':
     main()
