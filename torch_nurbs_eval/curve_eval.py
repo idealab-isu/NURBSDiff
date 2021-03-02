@@ -68,8 +68,11 @@ class CurveEvalFunc(torch.autograd.Function):
         ctx.m = m
         ctx.p = p
         ctx._dimension = _dimension
-        # ctrl_pts[:,:,:_dimension] = ctrl_pts[:,:,:_dimension]*ctrl_pts[:,:,_dimension].unsqueeze(-1)
-        curves = forward(ctrl_pts, uspan, Nu, u, m, p, _dimension)
+        ctrl_pts[:,:,:_dimension] = ctrl_pts[:,:,:_dimension]*ctrl_pts[:,:,_dimension].unsqueeze(-1)
+        # curves = forward(ctrl_pts, uspan, Nu, u, m, p, _dimension)
+        curves = torch.zeros((ctrl_pts.size(0), Nu.size(0), _dimension+1))
+        for j in range(p+1):
+            curves += Nu[:,j].unsqueeze(-1)*ctrl_pts[:,(uspan-p+j).type(torch.LongTensor),:]
         ctx.curves = curves
         return curves[:,:,:_dimension]/curves[:,:,_dimension].unsqueeze(-1)
         # return curves[:,:,:_dimension]
@@ -86,15 +89,25 @@ class CurveEvalFunc(torch.autograd.Function):
         curves = ctx.curves
         # print("Gradient curves")
         # print(grad_output)
-        grad_cw = torch.zeros((grad_output.size(0),grad_output.size(1),_dimension+1))
+        grad_cw = torch.ones((grad_output.size(0),grad_output.size(1),_dimension+1))
         grad_cw[:,:,:_dimension] = grad_output
-        for d in range(_dimension):
-            grad_cw[:,:,_dimension] += grad_output[:,:,d]/curves[:,:,_dimension]
-        grad_ctrl_pts  = backward(grad_cw, ctrl_pts, uspan, Nu, u, m, p, _dimension)
+        # grad_ctrl_pts  = backward(grad_cw, ctrl_pts, uspan, Nu, u, m, p, _dimension)
 
-        # print("Gradient control points")
-        # print(grad_ctrl_pts)
-        return Variable(grad_ctrl_pts[0]), None, None, None, None, None, None
+        grad_ctrl_pts = torch.zeros_like(ctrl_pts,dtype=grad_output.dtype)
+        n_prime = torch.zeros((ctrl_pts.size(0), Nu.size(0), _dimension))
+        m_prime = torch.zeros((ctrl_pts.size(0), Nu.size(0), 1))
+
+        for j in range(p+1):
+            grad_ctrl_pts.scatter_(1, (uspan-p+j).type(torch.LongTensor).unsqueeze(-1).repeat(1,1,3), Nu[:,j].unsqueeze(-1)*grad_cw, reduce='add')
+            n_prime += Nu[:,j].unsqueeze(-1)*ctrl_pts[:,(uspan-p+j).type(torch.LongTensor),:_dimension]
+            m_prime += Nu[:,j].unsqueeze(-1)
+
+        weights_grad = ((curves[:,:,_dimension:]*n_prime - m_prime*curves[:,:,:_dimension]))*(curves[:,:,_dimension:]**(-2))
+        # weights_grad = ((curves[:,:,_dimension]*n_prime - m_prime*curves[:,:,:_dimension]))
+        # print(weights_grad.size())
+
+
+        return Variable(grad_ctrl_pts), None, None, None, None, None, None
 
 
 def main():

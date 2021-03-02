@@ -15,22 +15,24 @@ def main():
     target = torch.from_numpy(target_np).unsqueeze(0).float()
 
     # # Compute and print loss
-    num_ctrl_pts = 6
+    num_ctrl_pts = 16
     x_cpts = np.linspace(0,1,num_ctrl_pts)
     y_cpts = np.linspace(0,1,num_ctrl_pts)
     z_cpts = np.linspace(0,1,num_ctrl_pts)
+    w_cpts = np.linspace(0.01,1,num_ctrl_pts)
     cpts = np.array([x_cpts, y_cpts, z_cpts]).T
     inp_ctrl_pts = torch.from_numpy(cpts).unsqueeze(0)
     # inp_ctrl_pts = torch.rand(1,num_ctrl_pts,3,requires_grad=True)
     inp_ctrl_pts = torch.nn.Parameter(inp_ctrl_pts)
-    layer = CurveEval(num_ctrl_pts, dimension=3, p=3, out_dim=128)
+    layer = CurveEval(num_ctrl_pts, dimension=3, p=3, out_dim=64)
     opt = torch.optim.Adam(iter([inp_ctrl_pts]), lr=0.01)
     pbar = tqdm(range(10000))
     for i in pbar:
         opt.zero_grad()
         weights = torch.ones(1,num_ctrl_pts,1)
         out = layer(torch.cat((inp_ctrl_pts,weights),axis=-1))
-        loss = chamfer_distance(out, target)[0]
+        loss = ((target - out)**2).mean()
+        # loss = chamfer_distance(out, target)[0]
         # if i < 2000:
         #     loss += ((target - out)**2).mean()
         # curve_length = ((out[:,0:-1,:] - out[:,1:,:])**2).sum((1,2)).mean()

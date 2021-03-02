@@ -103,8 +103,13 @@ class SurfEvalFunc(torch.autograd.Function):
         ctx.q = q
         ctx._dimension = _dimension
 
-        surfaces = forward(ctrl_pts, uspan_uv, vspan_uv, Nu_uv, Nv_uv, u_uv, v_uv, m, n, p, q, _dimension)
-        # Surfaces = torch.zeros(ctrl_pts.size(0), u_uv.shape[0], v_uv.shape[0], ctrl_pts.size(3))
+        # surfaces = forward(ctrl_pts, uspan_uv, vspan_uv, Nu_uv, Nv_uv, u_uv, v_uv, m, n, p, q, _dimension)
+
+        surfaces = torch.zeros(ctrl_pts.size(0), u_uv.shape[0], v_uv.shape[0], ctrl_pts.size(3))
+        for l in range(p+1):
+            for r in range(q+1):
+                surfaces += Nu_uv[:,:,l].unsqueeze(-1)*Nv_uv[:,:,r].unsqueeze(-1)*ctrl_pts[:,(uspan_uv-p+l).type(torch.LongTensor), (vspan_uv-q+r).type(torch.LongTensor),:]
+
         # for k in range(ctrl_pts.size(0)):
         #     for u in u_uv:
         #         for v in v_uv:
@@ -134,9 +139,15 @@ class SurfEvalFunc(torch.autograd.Function):
         surfaces=ctx.surfaces
         grad_sw = torch.zeros((grad_output.size(0),grad_output.size(1),grad_output.size(2),_dimension+1))
         grad_sw[:,:,:,:_dimension] = grad_output
-        for d in range(_dimension):
-            grad_sw[:,:,:,_dimension] += grad_output[:,:,:,d]/surfaces[:,:,:,_dimension]
+        # for d in range(_dimension):
+        #     grad_sw[:,:,:,_dimension] += grad_output[:,:,:,d]/surfaces[:,:,:,_dimension]
         grad_ctrl_pts  = backward(grad_sw, ctrl_pts, uspan_uv, vspan_uv, Nu_uv, Nv_uv, u_uv, v_uv, m, n, p, q, _dimension)
+
+        for l in range(p+1):
+            for r in range(q+1):
+                scatter_tensor = Nu_uv[:,:,l].unsqueeze(-1)*Nv_uv[:,:,r].unsqueeze(-1)*grad_sw
+                grad_ctrl_pts.scatter_(1, (uspan_uv-p+l).type(torch.LongTensor).unsqueeze(-1).repeat(1,1,3), scatter_tensor, reduce='add')
+
         return Variable(grad_ctrl_pts[0]), None, None, None, None, None, None,None,None,None,None,None,None
 
 
