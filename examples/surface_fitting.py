@@ -13,11 +13,11 @@ def main():
     timing = []
 
 
-    num_ctrl_pts1 = 4
-    num_ctrl_pts2 = 4
+    num_ctrl_pts1 = 8
+    num_ctrl_pts2 = 8
     inp_ctrl_pts = torch.nn.Parameter(torch.rand(1,num_ctrl_pts1, num_ctrl_pts2, 3))
 
-    x = y = np.linspace(-1,1,num=64)
+    x = y = np.linspace(-3,3,num=64)
     X, Y = np.meshgrid(x, y)
 
     def fun(X,Y):
@@ -26,7 +26,7 @@ def main():
 
     zs = np.array(fun(np.ravel(X), np.ravel(Y)))
     Z = zs.reshape(X.shape)
-    target = torch.from_numpy(np.array([X,Y,Z]).T)
+    target = torch.from_numpy(np.array([X,Y,Z]).T).unsqueeze(0)
     print(target.shape)
 
     layer = SurfEval(num_ctrl_pts1, num_ctrl_pts2, 3, 3, 3, 64)
@@ -45,8 +45,8 @@ def main():
         if i%200 == 0:
             fig = plt.figure()
             ax = fig.add_subplot(111, projection='3d')
-            target_mpl = target.numpy().squeeze()
-            predicted = out.detach().numpy().squeeze()
+            target_mpl = target.cpu().numpy().squeeze()
+            predicted = out.detach().cpu().numpy().squeeze()
             surf1 = ax.plot_surface(target_mpl[:, :,0],target_mpl[:, :,1],target_mpl[:, :,2], color='blue', label='target')
             surf2 = ax.plot_surface(predicted[:, :,0], predicted[:, :,1], predicted[:, :,2], color='green', label='predicted')
             surf1._facecolors2d=surf1._facecolor3d

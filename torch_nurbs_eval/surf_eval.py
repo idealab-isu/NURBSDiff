@@ -4,7 +4,7 @@ from torch.autograd import Function
 from torch.autograd import Variable
 import torch
 import numpy as np
-from torch_nurbs_eval.surf_eval_cpp import pre_compute_basis, forward, backward
+from torch_nurbs_eval.surf_eval_cpp import pre_compute_basis # , forward, backward
 import time
 
 
@@ -46,6 +46,11 @@ class SurfEval(torch.nn.Module):
         self.u = torch.linspace(0.0, 0.99, steps=out_dim)
         self.v = torch.linspace(0.0, 0.99, steps=out_dim)
         self.uspan_uv, self.vspan_uv, self.Nu_uv, self.Nv_uv = pre_compute_basis(self.u, self.v, self.U, self. V, m, n, p , q, out_dim, self._dimension)
+        
+        # self.uspan_uv = self.uspan_uv.cuda()        
+        # self.vspan_uv = self.vspan_uv.cuda()        
+        # self.Nu_uv = self.Nu_uv.cuda()        
+        # self.Nv_uv = self.Nv_uv.cuda()        
         # uspan_uv = []
         # vspan_uv = []
         # Nu_uv = []
@@ -82,73 +87,85 @@ class SurfEval(torch.nn.Module):
         """
         # input will be of dimension (batch_size, m+1, n+1, dimension)
 
-        out = SurfEvalFunc.apply(input, self.uspan_uv, self.vspan_uv, self.Nu_uv, self.Nv_uv, self.u, self.v, self.m, self.n, self.p, self.q, self._dimension)
-        return out
+        surfaces = self.Nu_uv[:,:,0].unsqueeze(-1)*self.Nv_uv[:,:,0].unsqueeze(-1)*\
+            input[:,(self.uspan_uv - self.p).type(torch.LongTensor), (self.vspan_uv-self.q).type(torch.LongTensor),:]
+        for r in range(1,self.q+1):
+            surfaces += self.Nu_uv[:,:,0].unsqueeze(-1)*self.Nv_uv[:,:,r].unsqueeze(-1)*\
+                input[:,(self.uspan_uv - self.p).type(torch.LongTensor), (self.vspan_uv - self.q + r).type(torch.LongTensor),:]
+
+        for l in range(1,self.p+1):
+            for r in range(self.q+1):
+                surfaces += self.Nu_uv[:,:,l].unsqueeze(-1)*self.Nv_uv[:,:,r].unsqueeze(-1)*\
+                input[:,(self.uspan_uv - self.p + l).type(torch.LongTensor), (self.vspan_uv - self.q + r).type(torch.LongTensor),:]
+        surfaces = surfaces[:,:,:,:self._dimension]/surfaces[:,:,:,self._dimension].unsqueeze(-1)
+        # out = SurfEvalFunc.apply(input, self.uspan_uv, self.vspan_uv, self.Nu_uv, self.Nv_uv, self.u, self.v, self.m, self.n, self.p, self.q, self._dimension)
+        return surfaces
 
 
-class SurfEvalFunc(torch.autograd.Function):
+# class SurfEvalFunc(torch.autograd.Function):
 
-    @staticmethod
-    def forward(ctx, ctrl_pts, uspan_uv, vspan_uv, Nu_uv, Nv_uv, u_uv, v_uv, m, n, p, q, _dimension):
-        ctx.save_for_backward(ctrl_pts)
-        ctx.uspan_uv = uspan_uv
-        ctx.vspan_uv = vspan_uv
-        ctx.Nu_uv = Nu_uv
-        ctx.Nv_uv = Nv_uv
-        ctx.u_uv = u_uv
-        ctx.v_uv = v_uv
-        ctx.m = m
-        ctx.n = n
-        ctx.p = p
-        ctx.q = q
-        ctx._dimension = _dimension
+#     @staticmethod
+#     def forward(ctx, ctrl_pts, uspan_uv, vspan_uv, Nu_uv, Nv_uv, u_uv, v_uv, m, n, p, q, _dimension):
+#         ctx.save_for_backward(ctrl_pts)
+#         ctx.uspan_uv = uspan_uv
+#         ctx.vspan_uv = vspan_uv
+#         ctx.Nu_uv = Nu_uv
+#         ctx.Nv_uv = Nv_uv
+#         ctx.u_uv = u_uv
+#         ctx.v_uv = v_uv
+#         ctx.m = m
+#         ctx.n = n
+#         ctx.p = p
+#         ctx.q = q
+#         ctx._dimension = _dimension
 
-        # surfaces = forward(ctrl_pts, uspan_uv, vspan_uv, Nu_uv, Nv_uv, u_uv, v_uv, m, n, p, q, _dimension)
+#         # surfaces = forward(ctrl_pts, uspan_uv, vspan_uv, Nu_uv, Nv_uv, u_uv, v_uv, m, n, p, q, _dimension)
 
-        surfaces = torch.zeros(ctrl_pts.size(0), u_uv.shape[0], v_uv.shape[0], ctrl_pts.size(3))
-        for l in range(p+1):
-            for r in range(q+1):
-                surfaces += Nu_uv[:,:,l].unsqueeze(-1)*Nv_uv[:,:,r].unsqueeze(-1)*ctrl_pts[:,(uspan_uv-p+l).type(torch.LongTensor), (vspan_uv-q+r).type(torch.LongTensor),:]
+#         surfaces = torch.zeros(ctrl_pts.size(0), u_uv.shape[0], v_uv.shape[0], ctrl_pts.size(3))
+#         for l in range(p+1):
+#             for r in range(q+1):
+#                 surfaces += Nu_uv[:,:,l].unsqueeze(-1)*Nv_uv[:,:,r].unsqueeze(-1)*ctrl_pts[:,(uspan_uv-p+l).type(torch.LongTensor), (vspan_uv-q+r).type(torch.LongTensor),:]
 
-        # for k in range(ctrl_pts.size(0)):
-        #     for u in u_uv:
-        #         for v in v_uv:
-        #             for l in range(0, q + 1):
-        #                 temp = np.zeros((self._dimension))
-        #                 vind = vspan - q + l
-        #                 for k in range(0, p + 1):
-        #                     temp = temp + Nu[k]*self.ctrl_pts[uind+k,vind,:]
-        #                 S = S + Nv[l]*temp
-        ctx.surfaces=surfaces
-        return surfaces[:,:,:,:_dimension]/surfaces[:,:,:,_dimension].unsqueeze(-1)
+#         # for k in range(ctrl_pts.size(0)):
+#         #     for u in u_uv:
+#         #         for v in v_uv:
+#         #             for l in range(0, q + 1):
+#         #                 temp = np.zeros((self._dimension))
+#         #                 vind = vspan - q + l
+#         #                 for k in range(0, p + 1):
+#         #                     temp = temp + Nu[k]*self.ctrl_pts[uind+k,vind,:]
+#         #                 S = S + Nv[l]*temp
+#         ctx.surfaces=surfaces
+#         return surfaces[:,:,:,:_dimension]/surfaces[:,:,:,_dimension].unsqueeze(-1)
 
-    @staticmethod
-    def backward(ctx, grad_output):
-        ctrl_pts,  = ctx.saved_tensors
-        uspan_uv = ctx.uspan_uv
-        vspan_uv = ctx.vspan_uv
-        Nu_uv = ctx.Nu_uv
-        Nv_uv = ctx.Nv_uv
-        u_uv = ctx.u_uv
-        v_uv = ctx.v_uv
-        m = ctx.m
-        n = ctx.n
-        p = ctx.p
-        q = ctx.q
-        _dimension = ctx._dimension
-        surfaces=ctx.surfaces
-        grad_sw = torch.zeros((grad_output.size(0),grad_output.size(1),grad_output.size(2),_dimension+1))
-        grad_sw[:,:,:,:_dimension] = grad_output
-        # for d in range(_dimension):
-        #     grad_sw[:,:,:,_dimension] += grad_output[:,:,:,d]/surfaces[:,:,:,_dimension]
-        grad_ctrl_pts  = backward(grad_sw, ctrl_pts, uspan_uv, vspan_uv, Nu_uv, Nv_uv, u_uv, v_uv, m, n, p, q, _dimension)
+#     @staticmethod
+#     def backward(ctx, grad_output):
+#         ctrl_pts,  = ctx.saved_tensors
+#         uspan_uv = ctx.uspan_uv
+#         vspan_uv = ctx.vspan_uv
+#         Nu_uv = ctx.Nu_uv
+#         Nv_uv = ctx.Nv_uv
+#         u_uv = ctx.u_uv
+#         v_uv = ctx.v_uv
+#         m = ctx.m
+#         n = ctx.n
+#         p = ctx.p
+#         q = ctx.q
+#         _dimension = ctx._dimension
+#         surfaces=ctx.surfaces
+#         grad_sw = torch.zeros((grad_output.size(0),grad_output.size(1),grad_output.size(2),_dimension+1))
+#         grad_sw[:,:,:,:_dimension] = grad_output
+#         # for d in range(_dimension):
+#         #     grad_sw[:,:,:,_dimension] += grad_output[:,:,:,d]/surfaces[:,:,:,_dimension]
+#         grad_ctrl_pts  = backward(grad_sw, ctrl_pts, uspan_uv, vspan_uv, Nu_uv, Nv_uv, u_uv, v_uv, m, n, p, q, _dimension)
+#         grad_ctrl_pts_mod = torch.zeros((grad_output.size(0),ctrl_pts.size(1),ctrl_pts.size(2),_dimension+1))
 
-        for l in range(p+1):
-            for r in range(q+1):
-                scatter_tensor = Nu_uv[:,:,l].unsqueeze(-1)*Nv_uv[:,:,r].unsqueeze(-1)*grad_sw
-                grad_ctrl_pts.scatter_(1, (uspan_uv-p+l).type(torch.LongTensor).unsqueeze(-1).repeat(1,1,3), scatter_tensor, reduce='add')
+#         for l in range(p+1):
+#             for r in range(q+1):
+#                 scatter_tensor = Nu_uv[:,:,l].unsqueeze(-1)*Nv_uv[:,:,r].unsqueeze(-1)*grad_sw
+#                 grad_ctrl_pts_mod.scatter_(1, (uspan_uv-p+l).type(torch.LongTensor).unsqueeze(-1).repeat(1,1,3), scatter_tensor, reduce='add')
 
-        return Variable(grad_ctrl_pts[0]), None, None, None, None, None, None,None,None,None,None,None,None
+#         return Variable(grad_ctrl_pts[0]), None, None, None, None, None, None,None,None,None,None,None,None
 
 
 
