@@ -91,7 +91,7 @@ class SurfEvalFunc(torch.autograd.Function):
         surfaces_cpp = forward_cpp(ctrl_pts.cpu(), uspan_uv.cpu(), vspan_uv.cpu(), Nu_uv.cpu(), Nv_uv.cpu(), u_uv.cpu(), v_uv.cpu(), m, n, p, q, _dimension)
         
         print("Surface comparison")
-        print(torch.nn.functional.mse_loss(surfaces.cpu(),surfaces_cpp))
+        # print(torch.nn.functional.mse_loss(surfaces.cpu(),surfaces_cpp))
         
         
         # Surfaces = torch.zeros(ctrl_pts.size(0), u_uv.shape[0], v_uv.shape[0], ctrl_pts.size(3))
@@ -105,6 +105,7 @@ class SurfEvalFunc(torch.autograd.Function):
         #                     temp = temp + Nu[k]*self.ctrl_pts[uind+k,vind,:]
         #                 S = S + Nv[l]*temp
         ctx.surfaces=surfaces
+        print(surfaces)
         return surfaces[:,:,:,:_dimension]/surfaces[:,:,:,_dimension].unsqueeze(-1)
 
     @staticmethod
@@ -138,11 +139,11 @@ def main():
     # print(ctrl_pts.shape)
     layer = SurfEval(16,16,3,3,3,64)
 
-    print("basis fn check")
-    print(layer.uspan_uv)
-    print(layer.vspan_uv)
-    print(layer.Nu_uv)
-    print(layer.Nv_uv)
+    # print("basis fn check")
+    # print(layer.uspan_uv)
+    # print(layer.vspan_uv)
+    # print(layer.Nu_uv)
+    # print(layer.Nv_uv)
 
     inp_ctrl_pts = ctrl_pts.detach().clone()
     inp_ctrl_pts[0,-1,-1,:3] += 10*torch.rand(3,dtype=torch.float32,device='cuda')

@@ -130,7 +130,7 @@ __global__ void surf_cuda_forward_kernel(
   unsigned int j = blockIdx.z * blockDim.z + threadIdx.z;
   // std::printf("Hello from k %d, i %d, l %d\n", k,i,l);
 
-
+  std:: printf("This is k %d, i %d, j %d\n" , k , i,j);
   if(k < ctrl_pts_size )
   { if (j < v_size )
     { if (i < u_size )
@@ -141,7 +141,9 @@ __global__ void surf_cuda_forward_kernel(
             for (int l = 0; l<=q; l++)
             {
               for (int r = 0; r <=p ; r++)
-              { temp[l][d] = temp[l][d] + Nu[i][r]*ctrl_pts[k][uspan[i]-p+r][vspan[j]-q+l][d];
+              { 
+                
+              temp[l][d] = temp[l][d] + Nu[i][r]*ctrl_pts[k][uspan[i]-p+r][vspan[j]-q+l][d];
               
               }
             
@@ -312,8 +314,8 @@ torch::Tensor surf_cuda_forward(
     unsigned int u_size = u.size(0);
     unsigned int v_size = v.size(0);
   
-    const dim3 block(16, 16, 4);
-    const dim3 grid((ctrl_pts_size)/16+1, (u_size)/16+1, (v_size)/4+1);
+    const dim3 block(4, 16, 16);
+    const dim3 grid((ctrl_pts_size)/4+1, (u_size)/16+1, (v_size)/16+1);
   
   
     surf_cuda_forward_kernel<<<grid, block>>>(
