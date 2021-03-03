@@ -4,9 +4,16 @@ from torch.autograd import Function
 from torch.autograd import Variable
 import torch
 import numpy as np
-from torch_nurbs_eval.surf_eval_cpp import pre_compute_basis, forward, backward
+# from torch.utils.cpp_extension import load
+# surf_eval_cuda = load(
+#     'surf_eval_cuda', ['csrc\\surf_eval.cpp', 'csrc\\surf_eval_cuda_kernel.cu'], verbose=True)
+from surf_eval_cuda import pre_compute_basis, forward, backward
+from surf_eval_cpp import  forward as forward_cpp, backward as backward_cpp
+import surface_data_generator as dg
 import time
-
+torch.manual_seed(120)
+from tqdm import tqdm
+from pytorch3d.loss import chamfer_distance
 
 def gen_knot_vector(p,n):
 
@@ -41,37 +48,14 @@ class SurfEval(torch.nn.Module):
         self.n = n
         self._dimension = dimension
         self.p, self.q = p, q
-        self.U = torch.Tensor(np.array(gen_knot_vector(self.p, self.m)))
-        self.V = torch.Tensor(np.array(gen_knot_vector(self.q, self.n)))
-        self.u = torch.linspace(0.0, 0.99, steps=out_dim)
-        self.v = torch.linspace(0.0, 0.99, steps=out_dim)
+        self.U = torch.Tensor(np.array(gen_knot_vector(self.p, self.m))).to('cuda')
+        self.V = torch.Tensor(np.array(gen_knot_vector(self.q, self.n))).to('cuda')
+        self.u = torch.linspace(0.0, 0.99, steps=out_dim,dtype=torch.float32,device='cuda')
+        self.v = torch.linspace(0.0, 0.99, steps=out_dim,dtype=torch.float32,device='cuda')
         self.uspan_uv, self.vspan_uv, self.Nu_uv, self.Nv_uv = pre_compute_basis(self.u, self.v, self.U, self. V, m, n, p , q, out_dim, self._dimension)
-        # uspan_uv = []
-        # vspan_uv = []
-        # Nu_uv = []
-        # Nv_uv = []
-        # for i in range(self.u.size(0)):
-        #     uspan_v = []
-        #     vspan_v = []
-        #     Nu_v = []
-        #     Nv_v = []
-        #     for j in range(self.v.size(0)):
-        #         uspan = FindSpan(self.n, self.p, self.u[i], self.U)
-        #         Nu = BasisFuns(uspan, self.u[i].item(), self.p, self.U)
-        #         vspan = FindSpan(self.m, self.q, self.v[j], self.V)
-        #         Nv = BasisFuns(vspan, self.v[j].item(), self.q, self.V)
-        #         uspan_v.append(uspan)
-        #         vspan_v.append(vspan)
-        #         Nu_v.append(Nu)
-        #         Nv_v.append(Nv)
-        #     uspan_uv.append(uspan_v)
-        #     vspan_uv.append(vspan_v)
-        #     Nu_uv.append(Nu_v)
-        #     Nv_uv.append(Nv_v)
-        # self.uspan_uv = np.array(uspan_uv)
-        # self.vspan_uv = np.array(vspan_uv)
-        # self.Nu_uv = np.array(Nu_uv)
-        # self.Nv_uv = np.array(Nv_uv)
+        self.Nu_uv = self.Nu_uv.view(out_dim, p+1)
+        self.Nv_uv = self.Nu_uv.view(out_dim, q+1)
+
 
     def forward(self,input):
         """
@@ -104,6 +88,12 @@ class SurfEvalFunc(torch.autograd.Function):
         ctx._dimension = _dimension
 
         surfaces = forward(ctrl_pts, uspan_uv, vspan_uv, Nu_uv, Nv_uv, u_uv, v_uv, m, n, p, q, _dimension)
+        surfaces_cpp = forward_cpp(ctrl_pts.cpu(), uspan_uv.cpu(), vspan_uv.cpu(), Nu_uv.cpu(), Nv_uv.cpu(), u_uv.cpu(), v_uv.cpu(), m, n, p, q, _dimension)
+        
+        print("Surface comparison")
+        print(torch.nn.functional.mse_loss(surfaces.cpu(),surfaces_cpp))
+        
+        
         # Surfaces = torch.zeros(ctrl_pts.size(0), u_uv.shape[0], v_uv.shape[0], ctrl_pts.size(3))
         # for k in range(ctrl_pts.size(0)):
         #     for u in u_uv:
@@ -132,7 +122,7 @@ class SurfEvalFunc(torch.autograd.Function):
         q = ctx.q
         _dimension = ctx._dimension
         surfaces=ctx.surfaces
-        grad_sw = torch.zeros((grad_output.size(0),grad_output.size(1),grad_output.size(2),_dimension+1))
+        grad_sw = torch.zeros((grad_output.size(0),grad_output.size(1),grad_output.size(2),_dimension+1),dtype=torch.float32,device='cuda')
         grad_sw[:,:,:,:_dimension] = grad_output
         for d in range(_dimension):
             grad_sw[:,:,:,_dimension] += grad_output[:,:,:,d]/surfaces[:,:,:,_dimension]
@@ -141,3 +131,100 @@ class SurfEvalFunc(torch.autograd.Function):
 
 
 
+def main():
+    timing = []
+
+    ctrl_pts = dg.gen_control_points(1,16,16,3)
+    # print(ctrl_pts.shape)
+    layer = SurfEval(16,16,3,3,3,64)
+
+    print("basis fn check")
+    print(layer.uspan_uv)
+    print(layer.vspan_uv)
+    print(layer.Nu_uv)
+    print(layer.Nv_uv)
+
+    inp_ctrl_pts = ctrl_pts.detach().clone()
+    inp_ctrl_pts[0,-1,-1,:3] += 10*torch.rand(3,dtype=torch.float32,device='cuda')
+    inp_ctrl_pts[0,2,2,:3] += 10*torch.rand(3,dtype=torch.float32,device='cuda')
+    inp_ctrl_pts[0,-3,-3,:3] += 10*torch.rand(3,dtype=torch.float32,device='cuda')
+    inp_ctrl_pts = torch.nn.Parameter(inp_ctrl_pts)
+
+
+
+    target_layer = SurfEval(16,16,3,3,3,64)
+    target = target_layer(ctrl_pts).detach()
+
+    print("target",target)
+    print(target.shape)
+
+    opt = torch.optim.SGD(iter([inp_ctrl_pts]), lr=0.01)
+    for i in range(5000):
+        out = layer(inp_ctrl_pts)
+        target = target.view(1,64*64,3)
+        out = out.view(1,64*64,3)
+        print(target.shape, out.shape)
+        print(target.dtype)
+        print(out)
+
+        loss,_ = torch.nn.functional.mse_loss(target,out)
+        # loss,_ = chamfer_distance(target, out)
+
+        print(loss)
+        #add regularizer
+        # surface_area = 
+        # loss += 0.5 * surface_area
+
+        loss.backward()
+        with torch.no_grad():
+            inp_ctrl_pts[:,:,:,:3].sub_(1 * inp_ctrl_pts.grad[:, :, :,:3])
+            
+        if i%50 == 0:
+            import matplotlib.pyplot as plt
+            from mpl_toolkits.mplot3d import Axes3D  
+            fig = plt.figure()
+            ax = fig.add_subplot(111, projection='3d')
+
+            target_mpl = target.numpy().squeeze()
+            ax.scatter(target_mpl[:,0],target_mpl[:,1],target_mpl[:,2], label='pointcloud', color='blue')
+
+            predicted = out.detach().numpy().squeeze()
+            ax.scatter(predicted[:,0], predicted[:,1], predicted[:,2], label='predicted', s=10, color='orange')
+            
+            ax.set_xlabel('X Label')
+            ax.set_ylabel('Y Label')
+            ax.set_zlabel('Z Label')
+            plt.show()
+            # break
+            # # pc_mpl = point_cloud.numpy().squeeze()
+            # # plt.plot(predicted[:,:,0], predicted[:,:,1], label='predicted')
+            # # plt.plot(inp_ctrl_pts.detach().numpy()[0,:,0], inp_ctrl_pts.detach().numpy()[0,:,1], label='control points')
+            # # plt.legend()
+            # # plt.show()
+            # ax.legend()
+            # ax.view_init(elev=20., azim=-35)
+            # plt.show()
+
+        
+        inp_ctrl_pts.grad.zero_()
+        print("loss", loss)
+
+
+
+    # for _ in range(10000):
+    #     ctrl_pts = torch.rand(1,8,8,4, requires_grad=True) # include a channel for weights
+    #     start = time.time()
+    #     layer = SurfEval(8,8, p=3, q=3)
+    #     out = layer(ctrl_pts)
+    #     y_pred = torch.rand(1,64,64,3)
+
+    #     # Compute and print loss
+    #     loss = (y_pred - out).pow(2).sum()
+    #     loss.backward()
+    #     end = time.time()
+    #     timing.append(end-start)
+    #     print(out.size(), (end-start))
+    # print(np.mean(timing))
+
+if __name__ == '__main__':
+    main()
