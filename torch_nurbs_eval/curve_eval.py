@@ -7,7 +7,6 @@ import numpy as np
 from torch_nurbs_eval.curve_eval_cpp import pre_compute_basis, forward, backward
 import time
 
-
 def gen_knot_vector(p,n):
 
     # p: degree, n: number of control points; m+1: number of knots
