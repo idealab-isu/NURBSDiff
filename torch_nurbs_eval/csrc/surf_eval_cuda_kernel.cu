@@ -353,10 +353,6 @@ torch::Tensor surf_cuda_forward(
 
 
 
-
-
-
-
     std::vector<torch::Tensor>surf_cuda_backward(
       torch::Tensor grad_output,
       torch::Tensor ctrl_pts,

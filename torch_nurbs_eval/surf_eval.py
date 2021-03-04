@@ -8,7 +8,7 @@ import numpy as np
 # surf_eval_cuda = load(
 #     'surf_eval_cuda', ['csrc\\surf_eval.cpp', 'csrc\\surf_eval_cuda_kernel.cu'], verbose=True)
 from surf_eval_cuda import pre_compute_basis, forward, backward
-from surf_eval_cpp import  forward as forward_cpp, backward as backward_cpp
+# from surf_eval_cpp import  forward as forward_cpp, backward as backward_cpp
 import surface_data_generator as dg
 import time
 torch.manual_seed(0)
@@ -88,11 +88,11 @@ class SurfEvalFunc(torch.autograd.Function):
         ctx._dimension = _dimension
 
         surfaces = forward(ctrl_pts, uspan_uv, vspan_uv, Nu_uv, Nv_uv, u_uv, v_uv, m, n, p, q, _dimension)
-        surfaces_cpp = forward_cpp(ctrl_pts.cpu(), uspan_uv.cpu(), vspan_uv.cpu(), Nu_uv.cpu(), Nv_uv.cpu(), u_uv.cpu(), v_uv.cpu(), m, n, p, q, _dimension)
+        # surfaces_cpp = forward_cpp(ctrl_pts.cpu(), uspan_uv.cpu(), vspan_uv.cpu(), Nu_uv.cpu(), Nv_uv.cpu(), u_uv.cpu(), v_uv.cpu(), m, n, p, q, _dimension)
         
     
         ctx.surfaces=surfaces
-        
+
         # print("Surface comparison")
         # print(surfaces[:,:,:,3])
         # print(surfaces_cpp[:,:,:,3])
@@ -189,7 +189,7 @@ def main():
 
    
     opt = torch.optim.SGD(iter([inp_ctrl_pts]), lr=0.01)
-    for i in range(5000):
+    for i in range(100000):
 
 
         out = layer(inp_ctrl_pts)
@@ -220,7 +220,7 @@ def main():
         with torch.no_grad():
             inp_ctrl_pts[:,:,:,:3].sub_(1 * inp_ctrl_pts.grad[:, :, :,:3])
             
-        if i%5 == 0:
+        if i%5000 == 0:
             import matplotlib.pyplot as plt
             from mpl_toolkits.mplot3d import Axes3D  
             fig = plt.figure()
@@ -238,19 +238,13 @@ def main():
             plt.show()
 
 
-
-
-
-
-            # break
-            # # pc_mpl = point_cloud.numpy().squeeze()
-            # # plt.plot(predicted[:,:,0], predicted[:,:,1], label='predicted')
-            # # plt.plot(inp_ctrl_pts.detach().numpy()[0,:,0], inp_ctrl_pts.detach().numpy()[0,:,1], label='control points')
-            # # plt.legend()
-            # # plt.show()
-            # ax.legend()
-            # ax.view_init(elev=20., azim=-35)
+            
+            # pc_mpl = point_cloud.numpy().squeeze()
+            # plt.plot(predicted[:,:,0], predicted[:,:,1], label='predicted')
+            # plt.plot(inp_ctrl_pts.detach().numpy()[0,:,0], inp_ctrl_pts.detach().numpy()[0,:,1], label='control points')
+            # plt.legend()
             # plt.show()
+            
 
         
         inp_ctrl_pts.grad.zero_()
