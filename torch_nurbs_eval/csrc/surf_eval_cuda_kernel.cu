@@ -121,17 +121,20 @@ __global__ void surf_cuda_forward_kernel(
   int p,
   int q,
   int _dimension,
-  unsigned int ctrl_pts_size,
+  unsigned int batch_size,
   unsigned int u_size,
   unsigned int v_size){
 
-  unsigned int k = blockIdx.x * blockDim.x + threadIdx.x;
-  unsigned int i = blockIdx.y * blockDim.y + threadIdx.y;
-  unsigned int j = blockIdx.z * blockDim.z + threadIdx.z;
+    unsigned int k = blockIdx.z;
+    unsigned int i = blockIdx.x * blockDim.x + threadIdx.x;
+    unsigned int j = blockIdx.y * blockDim.y + threadIdx.y;
   // std::printf("Hello from k %d, i %d, l %d\n", k,i,l);
 
-  std:: printf("This is k %d, i %d, j %d\n" , k , i,j);
-  if(k < ctrl_pts_size )
+  // std:: printf("This is block idx %d, block dimx %d, thread idx %d\n" ,blockIdx.x, blockDim.x, threadIdx.x);
+
+  // std:: printf("This is k %d, i %d, j %d\n" , k , i,j);
+
+  if(k < batch_size)
   { if (j < v_size )
     { if (i < u_size )
       { 
@@ -140,6 +143,7 @@ __global__ void surf_cuda_forward_kernel(
           {
             for (int l = 0; l<=q; l++)
             {
+              temp[l][d]=0;
               for (int r = 0; r <=p ; r++)
               { 
                 
@@ -181,25 +185,30 @@ __global__ void surf_cuda_backward_kernel(
   int p,
   int q,
   int _dimension,
-  unsigned int grad_output_size,
+  unsigned int batch_size,
   unsigned int u_size,
   unsigned int v_size){
 
-  unsigned int k = blockIdx.x * blockDim.x + threadIdx.x;
-  unsigned int i = blockIdx.y * blockDim.y + threadIdx.y;
-  unsigned int j = blockIdx.z * blockDim.z + threadIdx.z;
+  unsigned int k = blockIdx.z;
+  unsigned int i = blockIdx.x * blockDim.x + threadIdx.x;
+  unsigned int j = blockIdx.y * blockDim.y + threadIdx.y;
   // std::printf("Hello from k %d, i %d, l %d\n", k,i,l);
 
 
-  if(k < grad_output_size )
+  if(k < batch_size )
   { if ( j< v_size )
     { if( i < u_size )
       { 
 
         for (int d=0; d<=_dimension; d++)
-          {
+          { 
+            
             for (int l = 0; l<=q; l++)
-            {   grad_temp[l][d] = Nv[j][l]*grad_output[k][i][j][d];
+            {   
+              
+              grad_temp[l][d] = Nv[j][l]*grad_output[k][i][j][d];
+
+
               for (int r = 0; r <=p ; r++)
               { 
                 grad_ctrl_pts[k][ uspan[i] - p + r][ vspan[j] - q + l ][d] = grad_ctrl_pts[k][ uspan[i] - p + r][ vspan[j] - q + l ][d] + Nu[i][r]*grad_temp[l][d];
@@ -310,12 +319,12 @@ torch::Tensor surf_cuda_forward(
     // int* uspan_ptr = (int*)uspan.data_ptr();
     auto surfaces = torch::zeros({ctrl_pts.size(0),u.size(0), v.size(0), _dimension+1}, options);
     auto temp = torch::zeros({q+1, _dimension+1},options);
-    unsigned int ctrl_pts_size = ctrl_pts.size(0);
+    unsigned int batch_size = ctrl_pts.size(0);
     unsigned int u_size = u.size(0);
     unsigned int v_size = v.size(0);
   
-    const dim3 block(4, 16, 16);
-    const dim3 grid((ctrl_pts_size)/4+1, (u_size)/16+1, (v_size)/16+1);
+    const dim3 block(16, 16, 1);
+    const dim3 grid((u_size)/16+1, (v_size)/16+1, batch_size);
   
   
     surf_cuda_forward_kernel<<<grid, block>>>(
@@ -333,7 +342,7 @@ torch::Tensor surf_cuda_forward(
       p,
       q,
       _dimension,
-      ctrl_pts_size,
+      batch_size,
       u_size,
       v_size);
   
@@ -369,12 +378,12 @@ torch::Tensor surf_cuda_forward(
       // int* uspan_ptr = (int*)uspan.data_ptr();
       auto grad_ctrl_pts = torch::zeros({ctrl_pts.size(0),ctrl_pts.size(1), ctrl_pts.size(2), _dimension+1}, options);
       auto grad_temp = torch::zeros({q+1, _dimension+1},options);
-      unsigned int grad_output_size = grad_output.size(0);
+      unsigned int batch_size = grad_output.size(0);
       unsigned int u_size = u.size(0);
       unsigned int v_size = v.size(0);
     
-      const dim3 block(16, 16, 4);
-      const dim3 grid((grad_output_size)/16+1, (u_size)/16+1, (v_size)/4+1);
+      const dim3 block(16, 16, 1);
+      const dim3 grid((u_size)/16+1, (v_size)/16+1, batch_size);
     
     
       surf_cuda_backward_kernel<<<grid, block>>>(
@@ -393,7 +402,7 @@ torch::Tensor surf_cuda_forward(
         p,
         q,  
         _dimension,
-        grad_output_size,
+        batch_size,
         u_size,
         v_size);
     

@@ -138,16 +138,15 @@ torch::Tensor surf_forward(
       for (int i = 0; i<u_uv.size(0); i++)
       {
         auto temp = torch::zeros({q+1, _dimension+1});
+        auto Sw = torch::zeros({_dimension+1});
         for (int l = 0; l<=q; l++)
         {
           for (int r = 0; r<=p; r++)
           {
             temp[l] = temp[l] + Nu_uv[i][r].item<float>()*ctrl_pts[k][uspan_uv[i].item<int>() - p + r][vspan_uv[j].item<int>() - q + l];
           }
+          Sw += Nv_uv[j][l].item<float>()*temp[l];
         }
-        auto Sw = torch::zeros({_dimension+1});
-        for (int l=0; l<=q; l++)
-          Sw = Sw + Nv_uv[j][l]*temp[l];
         surface[k][i][j] = Sw;
       }
     }
