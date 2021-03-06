@@ -53,8 +53,14 @@ class CurveEval(torch.nn.Module):
         """
         # input will be of dimension (batch_size, m+1, n+1, dimension+1)
 
-        out = CurveEvalFunc.apply(input, self.uspan, self.Nu, self.u, self.m, self.p, self._dimension)
-        return out
+        # input[:,:,:self._dimension] = input[:,:,:self._dimension]*input[:,:,self._dimension].unsqueeze(-1)
+        curves = self.Nu[:,0].unsqueeze(-1)*input[:,(self.uspan-self.p).type(torch.LongTensor),:]
+        for j in range(1,self.p+1):
+            curves += self.Nu[:,j].unsqueeze(-1)*input[:,(self.uspan-self.p+j).type(torch.LongTensor),:]
+        return curves[:,:,:self._dimension]/curves[:,:,self._dimension].unsqueeze(-1)
+
+        # # out = CurveEvalFunc.apply(input, self.uspan, self.Nu, self.u, self.m, self.p, self.self._dimension)
+        # return out
 
 
 class CurveEvalFunc(torch.autograd.Function):
