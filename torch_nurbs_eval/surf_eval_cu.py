@@ -7,8 +7,7 @@ import numpy as np
 # from torch.utils.cpp_extension import load
 # surf_eval_cuda = load(
 #     'surf_eval_cuda', ['csrc\\surf_eval.cpp', 'csrc\\surf_eval_cuda_kernel.cu'], verbose=True)
-from torch_nurbs_eval.surf_eval_cpp import pre_compute_basis, forward, backward
-# from surf_eval_cpp import  forward as forward_cpp, backward as backward_cpp
+from torch_nurbs_eval.surf_eval_cuda import pre_compute_basis, forward, backward
 import surface_data_generator as dg
 import time
 torch.manual_seed(0)
@@ -48,10 +47,10 @@ class SurfEval(torch.nn.Module):
         self.n = n
         self._dimension = dimension
         self.p, self.q = p, q
-        self.U = torch.Tensor(knot_u)
-        self.V = torch.Tensor(knot_v)
-        self.u = torch.linspace(0.0, 1.0, steps=out_dim,dtype=torch.float32)
-        self.v = torch.linspace(0.0, 1.0, steps=out_dim,dtype=torch.float32)
+        self.U = torch.Tensor(knot_u).to('cuda')
+        self.V = torch.Tensor(knot_v).to('cuda')
+        self.u = torch.linspace(0.0, 1.0, steps=out_dim,dtype=torch.float32,device='cuda')
+        self.v = torch.linspace(0.0, 1.0, steps=out_dim,dtype=torch.float32,device='cuda')
         self.uspan_uv, self.vspan_uv, self.Nu_uv, self.Nv_uv = pre_compute_basis(self.u, self.v, self.U, self. V, m, n, p , q, out_dim, self._dimension)
         self.Nu_uv = self.Nu_uv.view(out_dim, p+1)
         self.Nv_uv = self.Nu_uv.view(out_dim, q+1)
@@ -138,7 +137,7 @@ class SurfEvalFunc(torch.autograd.Function):
         q = ctx.q
         _dimension = ctx._dimension
         surfaces=ctx.surfaces
-        grad_sw = torch.zeros((grad_output.size(0),grad_output.size(1),grad_output.size(2),_dimension+1),dtype=torch.float32)
+        grad_sw = torch.zeros((grad_output.size(0),grad_output.size(1),grad_output.size(2),_dimension+1),dtype=torch.float32,device='cuda')
         grad_sw[:,:,:,:_dimension] = grad_output
         for d in range(_dimension):
             grad_sw[:,:,:,_dimension] += grad_output[:,:,:,d]/surfaces[:,:,:,_dimension]
