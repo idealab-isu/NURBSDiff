@@ -16,7 +16,7 @@ __device__ __forceinline__ int find_span(int n, int p, float u, float* U)
 
 double eps = 1.0e-4;
 if (fabs(u-U[n+1]) < eps)
-    return n;
+    return n - 1;
 int low = p;
 int high = n+1;
 int mid = (low + high)/2;

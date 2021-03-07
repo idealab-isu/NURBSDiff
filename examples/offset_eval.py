@@ -1,6 +1,5 @@
 import numpy as np
 
-
 def Surf_pt(u, v, P, knot_u, knot_v, degree_u, degree_v):
     count = knot_v.shape[0] - degree_v - 1
     span_u = span_linear(knot_u.shape[0] - degree_u - 1, knot_u, u)
@@ -164,29 +163,80 @@ def Basis_Deri(u, order, span, degree, knotV):
     return ders
 
 
-def compute_surf_offset(off_layers, CNTRL_PTS, knot_u, knot_v, degree_u, degree_v):
-    delta_u = 64
-    delta_v = 64
-    grid_1, grid_2 = np.meshgrid(np.linspace(0.0, 1.0, delta_u), np.linspace(0.0, 1.0, delta_v))
-    OFF_PTS = np.empty([off_layers, grid_1.shape[0], grid_1.shape[1], 3], dtype=np.float32)
-    thickness = 5.0
+def compute_normal_surface(CNTRL_PTS, knot_u, knot_v, grid_1, grid_2):
+    count = grid_1.shape[1]
+    PT = np.empty([grid_1.size, 3])
+    deri = np.empty([grid_1.size, 2, 2, 3])
+    normals = np.empty([grid_1.size, 3])
+
     for i in range(0, grid_1.shape[0]):
         for j in range(0, grid_1.shape[1]):
 
-            # PTS, normals = compute_normal_surface(CNTRL_PTS, knot_u, knot_v, grid_1, grid_2)
-            PT = Surf_pt(grid_1[i][j], grid_2[i][j], CNTRL_PTS, knot_u, knot_v, degree_u, degree_v)
-            deri = Deri_Surf(grid_1[i][j], grid_2[i][j], 1, CNTRL_PTS, knot_u, knot_v, degree_u, degree_v)
-            temp = np.cross(deri[0][1], deri[1][0])
-            normals = temp / np.linalg.norm(temp)
+            # PT[i * count + j] = Surf_pt(grid_1[i][j], grid_2[i][j], CNTRL_PTS, knot_u, knot_v, degree_u=3, degree_v=3)
+            PT[i * count + j] = Surf_pt(grid_1[i][j], grid_2[i][j], CNTRL_PTS, knot_u, knot_v, degree_u=3, degree_v=3)
+            deri[i * count + j] = Deri_Surf(grid_1[i][j], grid_2[i][j], 1, CNTRL_PTS, knot_u, knot_v, degree_u=3, degree_v=3)
+            temp = np.cross(deri[i * count + j][0][1], deri[i * count + j][1][0])
+            normals[i * count + j] = temp / np.linalg.norm(temp)
 
-            # if PT[1] < 12:
-            #     thickness = 0.5
-            # elif 40 > PT[1] > 12:
-            #     thickness = 0.25
-            # else:
-            #     thickness = 0.1
+            pass
 
-            for layer in range(0, off_layers):
-                OFF_PTS[layer][i][j] = PT + (thickness * layer * normals)
+    return PT, normals
+    pass
+
+
+def Map_Points(Surf_Pts, Normals):
+
+    EdgePointMap = np.full([Surf_Pts.shape[0], Surf_Pts.shape[1], 3], -1, dtype=np.int8)
+    count = 0
+    for i in range(EdgePointMap.shape[0]):
+        for k in range(Surf_Pts.shape[1]):
+            count = 0
+            for j in range(EdgePointMap.shape[0]):
+                if i != j:
+                    EdgePointMap[i][k][0] = count
+                    test = np.argwhere(Surf_Pts[i, k] == Surf_Pts[j])
+                    # if Surf_Pts[i, k] in Surf_Pts[j]:
+                    if test.size != 0:
+                        count += 1
+                        EdgePointMap[i][k][0] = count
+                        EdgePointMap[i][k][(2 * EdgePointMap[i][k][0]) - 1] = j
+                        EdgePointMap[i][k][(2 * EdgePointMap[i][k][0])] = test[0, 0]
+
+    for i in range(EdgePointMap.shape[0]):
+        for j in range(EdgePointMap.shape[1]):
+            if EdgePointMap[i][j][0] != 0:
+                temp = Normals[i][j]
+                for k in range(EdgePointMap[i][j][0]):
+                    temp += Normals[EdgePointMap[i][j][2 * k + 1], EdgePointMap[i][j][2 * k + 2]]
+
+                temp_norm = np.linalg.norm(temp)
+                if temp_norm != 0.0:
+                    temp /= temp_norm
+
+                Normals[i][j] = temp
+                for k in range(EdgePointMap[i][j][0]):
+                    Normals[EdgePointMap[i][j][2 * k + 1], EdgePointMap[i][j][2 * k + 2]] = temp
+                    pass
+
+    print('Max count  ==  ', count)
+
+    return Normals
+    pass
+
+
+def compute_surf_offset(CNTRL_PTS, knot_u, knot_v, degree_u, degree_v, eval_pts_size, thickness):
+    delta_u = eval_pts_size
+    delta_v = eval_pts_size
+    grid_1, grid_2 = np.meshgrid(np.linspace(0.0, 1.0, delta_u), np.linspace(0.0, 1.0, delta_v))
+    OFF_PTS = np.empty([CNTRL_PTS.shape[0], grid_1.shape[0] * grid_1.shape[1], 3], dtype=np.float32)
+    SURF_PTS = np.empty([CNTRL_PTS.shape[0], grid_1.shape[0] * grid_1.shape[1], 3], dtype=np.float32)
+    NORMALS = np.empty([CNTRL_PTS.shape[0], grid_1.shape[0] * grid_1.shape[1], 3], dtype=np.float32)
+
+    for i in range(0, CNTRL_PTS.shape[0]):
+        SURF_PTS[i], NORMALS[i] = compute_normal_surface(CNTRL_PTS[i], knot_u, knot_v, grid_1, grid_2)
+        OFF_PTS[i] = SURF_PTS[i] + (thickness * NORMALS[i])
+
+    # NORMALS = Map_Points(SURF_PTS, NORMALS)
+    # for i in range(CNTRL_PTS.shape[0]):
 
     return OFF_PTS
