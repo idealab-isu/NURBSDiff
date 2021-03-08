@@ -16,7 +16,7 @@ def main():
 
     num_ctrl_pts1 = 4
     num_ctrl_pts2 = 4
-    num_patches = 2
+    num_patches = 1
     ctrl_pts_2 = np.load('CNTRL_PTS_2_Chamber.npy').astype('float32')
     ctrl_pts_2[:,:,:,-1] = 1.0
     temp = np.reshape(ctrl_pts_2, [200, 972, num_ctrl_pts1, num_ctrl_pts2, 4])
@@ -28,7 +28,7 @@ def main():
     for i in range(num_patches):
         off_pts = off.compute_surf_offset(1, ctrl_pts_2[0, i+1], knot_u, knot_v, 3, 3)
         off_pts_surf.append(off_pts)
-    target = torch.from_numpy(np.array(off_pts_surf))
+    target = torch.from_numpy(np.array(off_pts_surf)).squeeze(0)
     print(target.shape)
 
     layer = SurfEval(num_ctrl_pts1, num_ctrl_pts2, 3, 3, 3, 64)
@@ -47,11 +47,11 @@ def main():
         if i%200 == 0:
             fig = plt.figure()
             ax = fig.add_subplot(111, projection='3d')
-            for i in range(num_patches):
-                target_mpl = target.numpy().squeeze()
-                predicted = out.detach().numpy().squeeze()
-                surf1 = ax.plot_surface(target_mpl[i,:, :,0], target_mpl[i, :, :,1], target_mpl[i, :, :,2], color='blue', label='target %d'%i)
-                surf2 = ax.plot_surface(predicted[i,:, :,0], predicted[i, :, :,1], predicted[i, :, :,2], color='green', label='predicted %d'%i)
+            for patch_idx in range(num_patches):
+                target_mpl = target.numpy()
+                predicted = out.detach().numpy()
+                surf1 = ax.plot_surface(target_mpl[patch_idx,:, :,0], target_mpl[patch_idx, :, :,1], target_mpl[patch_idx, :, :,2], color='blue', label='target %d'%patch_idx)
+                surf2 = ax.plot_surface(predicted[patch_idx,:, :,0], predicted[patch_idx, :, :,1], predicted[patch_idx, :, :,2], color='green', label='predicted %d'%patch_idx)
                 surf1._facecolors2d=surf1._facecolor3d
                 surf1._edgecolors2d=surf1._edgecolor3d
                 surf2._facecolors2d=surf2._facecolor3d

@@ -169,7 +169,7 @@ def compute_surf_offset(off_layers, CNTRL_PTS, knot_u, knot_v, degree_u, degree_
     delta_v = 64
     grid_1, grid_2 = np.meshgrid(np.linspace(0.0, 1.0, delta_u), np.linspace(0.0, 1.0, delta_v))
     OFF_PTS = np.empty([off_layers, grid_1.shape[0], grid_1.shape[1], 3], dtype=np.float32)
-    thickness = 5.0
+    thickness = 0.0
     for i in range(0, grid_1.shape[0]):
         for j in range(0, grid_1.shape[1]):
 

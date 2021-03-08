@@ -154,7 +154,7 @@ def main():
     
 
     # # Compute and print loss
-    num_ctrl_pts = 64
+    num_ctrl_pts = 32
     # x_cpts = np.linspace(np.min(target_np[:,0]),np.max(target_np[:,0]),num_ctrl_pts)
     # y_cpts = np.linspace(np.min(target_np[:,1]),np.max(target_np[:,1]),num_ctrl_pts)
     # target_np = np.sort(target_np,axis=0)
@@ -174,6 +174,7 @@ def main():
     inp_ctrl_pts = torch.nn.Parameter(inp_ctrl_pts)
     layer = CurveEval(num_ctrl_pts, dimension=2, p=10, out_dim=num_eval_pts)
     opt = torch.optim.Adam(iter([inp_ctrl_pts]), lr=0.1)
+    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(opt, 'min')
     pbar = tqdm(range(100000))
     for i in pbar:
         opt.zero_grad()
@@ -185,13 +186,13 @@ def main():
         # print(target.dtype)
         # loss = ((target - out)**2).mean()
         loss,_ = chamfer_distance(out, target)
-        # if i < 2000:
-        #     loss += ((target - out)**2).mean()
-        # curve_length = ((out[:,0:-1,:] - out[:,1:,:])**2).sum((1,2)).mean()
-        # loss += curve_length
+        if i < 3000:
+            curve_length = ((out[:,0:-1,:] - out[:,1:,:])**2).sum((1,2)).mean()
+            loss += 0.1*curve_length
         loss.backward()
         opt.step()
-        if (i+1)%1000 == 0:
+        scheduler.step(loss)
+        if (i+1)%10000 == 0:
             target_mpl = target.numpy().squeeze()
             # pc_mpl = point_cloud.numpy().squeeze()
             predicted = out.detach().numpy().squeeze()
