@@ -12,7 +12,7 @@ int find_span(int n, int p, float u, float* U)
       //if (u == U[n+1])
       //      return n; // Special case
       if (fabs(u - U[n+1]) < eps)
-            return n; // Special case
+            return n - 1; // Special case
       int low  = p;
       int high = n+1; 
       // Do binary search
