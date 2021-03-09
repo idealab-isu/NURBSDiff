@@ -76,7 +76,6 @@ class SurfEval(torch.nn.Module):
                         self.Nv_uv[:,r].unsqueeze(0).unsqueeze(0).unsqueeze(-1)
 
             surfaces = surfaces[:,:,:,:self._dimension]/surfaces[:,:,:,self._dimension].unsqueeze(-1)
-            surfaces_cpp = SurfEvalFunc.apply(input, self.uspan_uv, self.vspan_uv, self.Nu_uv, self.Nv_uv, self.u, self.v, self.m, self.n, self.p, self.q, self._dimension, self.dvc)
             return surfaces
 
 

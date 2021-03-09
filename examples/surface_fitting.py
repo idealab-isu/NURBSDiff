@@ -12,10 +12,10 @@ from matplotlib import cm
 def main():
     timing = []
 
-    num_ctrl_pts1 = 4
-    num_ctrl_pts2 = 4
-    num_eval_pts_u = 8
-    num_eval_pts_v = 8
+    num_ctrl_pts1 = 12
+    num_ctrl_pts2 = 12
+    num_eval_pts_u = 128
+    num_eval_pts_v = 128
     inp_ctrl_pts = torch.nn.Parameter(torch.rand(1,num_ctrl_pts1, num_ctrl_pts2, 3))
 
     x = np.linspace(-5,5,num=num_eval_pts_u)

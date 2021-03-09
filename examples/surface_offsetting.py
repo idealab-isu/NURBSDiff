@@ -47,7 +47,7 @@ def main():
     isolate_pts = torch.from_numpy(temp)
     inp_ctrl_pts = torch.nn.Parameter(isolate_pts)
 
-    layer = SurfEval(num_ctrl_pts1, num_ctrl_pts2, knot_u, knot_v, 3, 3, 3, eval_pts_size)
+    layer = SurfEval(num_ctrl_pts1, num_ctrl_pts2, knot_u=knot_u, knot_v=knot_v, dimension=3, p=3, q=3, out_dim_u=eval_pts_size, out_dim_v=eval_pts_size)
     opt = torch.optim.Adam(iter([inp_ctrl_pts]), lr=0.01)
     pbar = tqdm(range(10000))
     for i in pbar:
@@ -61,6 +61,7 @@ def main():
         if i%200 == 0:
             fig = plt.figure()
             ax = fig.add_subplot(111, projection='3d')
+            print(loss.item())
 
             for k in range(target.shape[0]):
                 target_mpl = target[k:k+1].cpu().numpy().squeeze()
