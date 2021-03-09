@@ -16,7 +16,7 @@ class CurveEval(torch.nn.Module):
     torch.autograd.Function and implementing the forward and backward passes
     which operate on Tensors.
     """
-    def __init__(self, m, knot_v = None,  dimension=3, p=2, out_dim=32, method='tc', dvc='cuda'):
+    def __init__(self, m, knot_v=None,  dimension=3, p=2, out_dim=32, method='tc', dvc='cuda'):
         super(CurveEval, self).__init__()
         self.m = m
         self._dimension = dimension
@@ -48,7 +48,7 @@ class CurveEval(torch.nn.Module):
         if self.method == 'cpp':
             out = CurveEvalFunc.apply(input, self.uspan, self.Nu, self.u, self.m, self.p, self._dimension, self.dvc)
             return out
-        else:
+        elif self.method == 'tc':
             # input[:,:,:self._dimension] = input[:,:,:self._dimension]*input[:,:,self._dimension].unsqueeze(-1)
             curves = self.Nu[:,0].unsqueeze(-1)*input[:,(self.uspan-self.p).type(torch.LongTensor),:]
             for j in range(1,self.p+1):

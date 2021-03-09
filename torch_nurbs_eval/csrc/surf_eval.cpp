@@ -34,8 +34,6 @@ std::vector<torch::Tensor> surf_pre_compute_basis(torch::Tensor u,
   float* V_ptr = (float*)V.data_ptr();
   auto options = torch::TensorOptions().dtype(torch::kInt);
 
-
-
   for (int i = 0; i<u.size(0); i++)
   {
     auto uspan_u = find_span(m, p, u[i].item<float>(), U_ptr);
@@ -45,7 +43,6 @@ std::vector<torch::Tensor> surf_pre_compute_basis(torch::Tensor u,
     Nu.push_back(Nu_tensor);
   }
 
-  
 
 for (int j = 0; j<v.size(0); j++)
   {
@@ -65,6 +62,9 @@ for (int j = 0; j<v.size(0); j++)
   int *vspan_ptr = &vspan[0];
   auto vspan_out = torch::from_blob(vspan_ptr, torch::IntList(v.size(0)), options).clone();
   auto Nv_out = torch::stack(Nv);
+
+
+
 
   // for (int i = 0; i<u.size(0); i++)
   // {

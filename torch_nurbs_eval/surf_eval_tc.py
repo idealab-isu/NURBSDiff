@@ -43,8 +43,8 @@ class SurfEval(torch.nn.Module):
         self.p, self.q = p, q
         self.U = torch.Tensor(np.array(gen_knot_vector(self.p, self.m)))
         self.V = torch.Tensor(np.array(gen_knot_vector(self.q, self.n)))
-        self.u = torch.linspace(0.0, 0.99, steps=out_dim)
-        self.v = torch.linspace(0.0, 0.99, steps=out_dim)
+        self.u = torch.linspace(0.0, 1.0, steps=out_dim)
+        self.v = torch.linspace(0.0, 1.0, steps=out_dim)
         self.uspan_uv, self.vspan_uv, self.Nu_uv, self.Nv_uv = pre_compute_basis(self.u, self.v, self.U, self. V, m, n, p , q, out_dim, self._dimension)
         
         # self.uspan_uv = self.uspan_uv.cuda()        
