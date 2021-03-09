@@ -6,7 +6,7 @@ from torch.autograd import Function
 from torch.autograd import Variable
 from torch_nurbs_eval.surf_eval_cpp import pre_compute_basis as cpp_pre_compute_basis, forward as cpp_forward, backward as cpp_backward
 from torch_nurbs_eval.surf_eval_cuda import pre_compute_basis, forward, backward
-
+from .utils import gen_knot_vector
 
 class SurfEval(torch.nn.Module):
     """
@@ -14,7 +14,7 @@ class SurfEval(torch.nn.Module):
     torch.autograd.Function and implementing the forward and backward passes
     which operate on Tensors.
     """
-    def __init__(self, m, n, knot_u=None, knot_v=None, dimension=3, p=3, q=3, out_dim=64, method='tc', dvc='cuda'):
+    def __init__(self, m, n, dimension=3, p=3, q=3, knot_u=None, knot_v=None, out_dim=64, method='cpp', dvc='cpp'):
         super(SurfEval, self).__init__()
         self.m = m
         self.n = n
@@ -27,9 +27,9 @@ class SurfEval(torch.nn.Module):
         if knot_v is not None:
             self.V = torch.Tensor(knot_v)
         else:
-            self.U = torch.Tensor(np.array(gen_knot_vector(self.q, self.n)))
-        self.u = torch.linspace(0.0, 1.0, steps=out_dim,dtype=torch.float32)
-        self.v = torch.linspace(0.0, 1.0, steps=out_dim,dtype=torch.float32)
+            self.V = torch.Tensor(np.array(gen_knot_vector(self.q, self.n)))
+        self.u = torch.linspace(0.0, 1.0, steps=out_dim, dtype=torch.float32)
+        self.v = torch.linspace(0.0, 1.0, steps=out_dim, dtype=torch.float32)
         self.method = method
         self.dvc = dvc
         if self.dvc == 'cuda':
@@ -37,19 +37,16 @@ class SurfEval(torch.nn.Module):
             self.u = self.u.cuda()
             self.V = self.V.cuda()
             self.v = self.v.cuda()
-            self.uspan_uv, self.vspan_uv, self.Nu_uv, self.Nv_uv = pre_compute_basis(self.u, self.v, self.U, self. V, m, n, p , q, out_dim, self._dimension)
-            print(self.uspan_uv.size(), self.Nu_uv.size())
+            self.uspan_uv, self.vspan_uv, self.Nu_uv, self.Nv_uv = pre_compute_basis(self.u, self.v, self.U, self.V, m, n, p , q, out_dim, self._dimension)
             self.Nu_uv = self.Nu_uv.view(out_dim, p+1)
             self.Nv_uv = self.Nu_uv.view(out_dim, q+1)
-            if self.method == 'tc':
-                self.Nu_uv = self.Nu_uv.repeat(self.v.size(0),1,1).view(self.u.size(0),self.v.size(0),self.p+1)
-                self.Nv_uv = self.Nv_uv.repeat(self.u.size(0),1,1).view(self.u.size(0),self.v.size(0),self.q+1)  
         else:
-            print('blackhole')
             self.uspan_uv, self.vspan_uv, self.Nu_uv, self.Nv_uv = cpp_pre_compute_basis(self.u, self.v, self.U, self. V, m, n, p , q, out_dim, self._dimension)
             self.Nu_uv = self.Nu_uv.view(out_dim, p+1)
             self.Nv_uv = self.Nu_uv.view(out_dim, q+1)
-
+        if self.method == 'tc':
+            self.Nu_uv = self.Nu_uv.repeat(self.v.size(0),1,1).view(self.u.size(0),self.v.size(0),self.p+1)
+            self.Nv_uv = self.Nv_uv.repeat(self.u.size(0),1,1).view(self.u.size(0),self.v.size(0),self.q+1)
 
     def forward(self,input):
         """
@@ -64,15 +61,15 @@ class SurfEval(torch.nn.Module):
             return out
         elif self.method == 'tc':
             surfaces = self.Nu_uv[:,:,0].unsqueeze(-1)*self.Nv_uv[:,:,0].unsqueeze(-1)*\
-                input[:,(self.uspan_uv - self.p).type(torch.LongTensor), (self.vspan_uv-self.q).type(torch.LongTensor),:]
+                input[:,(self.uspan_uv - self.p).type(torch.LongTensor), :,:][:,:, (self.vspan_uv-self.q).type(torch.LongTensor),:]
             for r in range(1,self.q+1):
                 surfaces += self.Nu_uv[:,:,0].unsqueeze(-1)*self.Nv_uv[:,:,r].unsqueeze(-1)*\
-                    input[:,(self.uspan_uv - self.p).type(torch.LongTensor), (self.vspan_uv - self.q + r).type(torch.LongTensor),:]
+                    input[:,(self.uspan_uv - self.p).type(torch.LongTensor), :,:][:,:, (self.vspan_uv-self.q+r).type(torch.LongTensor),:]
 
             for l in range(1,self.p+1):
                 for r in range(self.q+1):
                     surfaces += self.Nu_uv[:,:,l].unsqueeze(-1)*self.Nv_uv[:,:,r].unsqueeze(-1)*\
-                    input[:,(self.uspan_uv - self.p + l).type(torch.LongTensor), (self.vspan_uv - self.q + r).type(torch.LongTensor),:]
+                    input[:,(self.uspan_uv - self.p+l).type(torch.LongTensor), :,:][:,:, (self.vspan_uv-self.q+r).type(torch.LongTensor),:]
             surfaces = surfaces[:,:,:,:self._dimension]/surfaces[:,:,:,self._dimension].unsqueeze(-1)
             return surfaces
 
@@ -126,23 +123,12 @@ class SurfEvalFunc(torch.autograd.Function):
             grad_sw[:,:,:,_dimension] += grad_output[:,:,:,d]/surfaces[:,:,:,_dimension]
 
 
+        if _device == 'cuda':
+            grad_ctrl_pts = backward(grad_sw, ctrl_pts, uspan_uv, vspan_uv, Nu_uv, Nv_uv, u_uv, v_uv, m, n, p, q, _dimension)
+        else:
+            grad_ctrl_pts = cpp_backward(grad_sw, ctrl_pts, uspan_uv, vspan_uv, Nu_uv, Nv_uv, u_uv, v_uv, m, n, p, q, _dimension)
 
-        # print("Before backward")
-        grad_ctrl_pts = backward(grad_sw, ctrl_pts, uspan_uv, vspan_uv, Nu_uv, Nv_uv, u_uv, v_uv, m, n, p, q, _dimension)
         
-        
-        #Checks for backward
-        # print("Reached here")
-
-        # # print(grad_sw.device,ctrl_pts.device,uspan_uv.device,vspan_uv.device,Nu_uv.device, Nv_uv.device, u_uv.device, v_uv.device)
-        # grad_ctrl_pts_cpu = backward_cpp(grad_sw.cpu(),ctrl_pts.cpu(),uspan_uv.cpu(),vspan_uv.cpu(),Nu_uv.cpu(), Nv_uv.cpu(), u_uv, v_uv, m, n, p, q, _dimension)
-
-
-
-        # print(" Backward loss between GPU and CPU")
-        # print(torch.nn.functional.mse_loss(grad_ctrl_pts[0].cpu(),grad_ctrl_pts_cpu[0]))
-        # print(grad_ctrl_pts)
-
         
         return Variable(grad_ctrl_pts[0]), None, None, None, None, None, None,None,None,None,None,None,None,None
 

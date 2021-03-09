@@ -169,10 +169,10 @@ def main():
     cpts = np.array([xy_pts[:,0],xy_pts[:,1]]).T
 
     inp_ctrl_pts = torch.from_numpy(cpts).unsqueeze(0)
-    print(inp_ctrl_pts.size())
+
     # inp_ctrl_pts = torch.rand(1,num_ctrl_pts,3,requires_grad=True)
     inp_ctrl_pts = torch.nn.Parameter(inp_ctrl_pts)
-    layer = CurveEval(num_ctrl_pts, dimension=2, p=10, out_dim=num_eval_pts)
+    layer = CurveEval(num_ctrl_pts, dimension=2, p=3, out_dim=num_eval_pts)
     opt = torch.optim.Adam(iter([inp_ctrl_pts]), lr=0.1)
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(opt, 'min')
     pbar = tqdm(range(100000))

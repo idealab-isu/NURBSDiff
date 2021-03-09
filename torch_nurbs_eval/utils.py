@@ -2,7 +2,6 @@ import numpy as np
 
 
 def gen_knot_vector(p,n):
-
     # p: degree, n: number of control points; m+1: number of knots
     m = p + n + 1
 

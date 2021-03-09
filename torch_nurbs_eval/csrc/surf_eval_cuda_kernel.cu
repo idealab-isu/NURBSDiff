@@ -291,8 +291,7 @@ std::vector<torch::Tensor> surf_cuda_pre_compute_basis(
           v_size);
     // }));
 
-      std::cout<<Nu<<std::endl;
-  
+ 
       return {uspan, vspan, Nu, Nv};
     
     }

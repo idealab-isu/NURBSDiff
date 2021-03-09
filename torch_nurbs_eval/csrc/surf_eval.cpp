@@ -44,7 +44,7 @@ std::vector<torch::Tensor> surf_pre_compute_basis(torch::Tensor u,
   }
 
 
-for (int j = 0; j<v.size(0); j++)
+  for (int j = 0; j<v.size(0); j++)
   {
     auto vspan_v = find_span(n, q, v[j].item<float>(), V_ptr);
     auto Nv_tensor = torch::zeros({q+1});

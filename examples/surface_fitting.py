@@ -13,11 +13,12 @@ def main():
     timing = []
 
 
-    num_ctrl_pts1 = 8
-    num_ctrl_pts2 = 8
+    num_ctrl_pts1 = 24
+    num_ctrl_pts2 = 24
+    num_eval_pts = 128
     inp_ctrl_pts = torch.nn.Parameter(torch.rand(1,num_ctrl_pts1, num_ctrl_pts2, 4))
 
-    x = y = np.linspace(-5,5,num=64)
+    x = y = np.linspace(-5,5,num=num_eval_pts)
     X, Y = np.meshgrid(x, y)
 
     def fun(X,Y):
@@ -28,21 +29,21 @@ def main():
     Z = zs.reshape(X.shape)
     target = torch.FloatTensor(np.array([X,Y,Z]).T).unsqueeze(0)
 
-    layer = SurfEval(num_ctrl_pts1, num_ctrl_pts2, 3, 3, 3, 64)
+    layer = SurfEval(num_ctrl_pts1, num_ctrl_pts2, dimension=3, p=3, q=3, out_dim=num_eval_pts)
     opt = torch.optim.Adam(iter([inp_ctrl_pts]), lr=0.01)
     pbar = tqdm(range(2000))
     for i in pbar:
         opt.zero_grad()
         # weights = torch.ones(1,num_ctrl_pts1, num_ctrl_pts2, 1)
         out = layer(inp_ctrl_pts)
-        target = target.reshape(1,64*64,3)
-        out = out.reshape(1,64*64,3)
-        # loss = ((target-out)**2).mean()
-        loss, _ = chamfer_distance(target,out)
+        target = target.reshape(1,num_eval_pts*num_eval_pts,3)
+        out = out.reshape(1,num_eval_pts*num_eval_pts,3)
+        loss = ((target-out)**2).mean()
+        # loss, _ = chamfer_distance(target,out)
         loss.backward()
         opt.step()
-        target = target.reshape(1,64,64,3)
-        out = out.reshape(1,64,64,3)
+        target = target.reshape(1,num_eval_pts,num_eval_pts,3)
+        out = out.reshape(1,num_eval_pts,num_eval_pts,3)
 
         if i%500 == 0:
             fig = plt.figure()
