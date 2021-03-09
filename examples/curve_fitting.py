@@ -136,7 +136,7 @@ def main():
     target_np = im_io('./skeletons/cat.png')
 
 
-    target = torch.from_numpy(target_np).unsqueeze(0).float()
+    target = torch.from_numpy(target_np).unsqueeze(0).float().cuda()
     
 
     # print(target_np.shape)
@@ -179,7 +179,7 @@ def main():
     for i in pbar:
         opt.zero_grad()
         weights = torch.ones(1,num_ctrl_pts,1)
-        out = layer(torch.cat((inp_ctrl_pts,weights),axis=-1))
+        out = layer(torch.cat((inp_ctrl_pts,weights),axis=-1).float().cuda())
         out = out.float()
 
         # print(out.dtype)
@@ -193,9 +193,9 @@ def main():
         opt.step()
         scheduler.step(loss)
         if (i+1)%10000 == 0:
-            target_mpl = target.numpy().squeeze()
+            target_mpl = target.cpu().numpy().squeeze()
             # pc_mpl = point_cloud.numpy().squeeze()
-            predicted = out.detach().numpy().squeeze()
+            predicted = out.detach().cpu().numpy().squeeze()
             print(target_mpl.shape)
             print(predicted.shape)
             all_plot(inp_ctrl_pts,10,predicted,target)
