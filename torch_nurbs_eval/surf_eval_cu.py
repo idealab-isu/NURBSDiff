@@ -23,9 +23,9 @@ class SurfEval(torch.nn.Module):
         self.V = torch.Tensor(knot_v).to('cuda')
         self.u = torch.linspace(0.0, 1.0, steps=out_dim,dtype=torch.float32,device='cuda')
         self.v = torch.linspace(0.0, 1.0, steps=out_dim,dtype=torch.float32,device='cuda')
-        self.uspan_uv, self.vspan_uv, self.Nu_uv, self.Nv_uv = pre_compute_basis(self.u, self.v, self.U, self. V, m, n, p , q, out_dim, self._dimension)
-        self.Nu_uv = self.Nu_uv.view(out_dim, p+1)
-        self.Nv_uv = self.Nu_uv.view(out_dim, q+1)
+        self.uspan_uv, self.vspan_uv, self.Nu_uv, self.Nv_uv = pre_compute_basis(self.u, self.v, self.U, self. V, m, n, p , q, out_dim_u, self._dimension)
+        self.Nu_uv = self.Nu_uv.view(out_dim_u, p+1)
+        self.Nv_uv = self.Nv_uv.view(out_dim_v, q+1)
 
 
     def forward(self,input):

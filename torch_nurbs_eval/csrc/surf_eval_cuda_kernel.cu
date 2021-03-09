@@ -214,14 +214,8 @@ __global__ void surf_cuda_backward_kernel(
                 grad_ctrl_pts[k][ uspan[i] - p + r][ vspan[j] - q + l ][d] = grad_ctrl_pts[k][ uspan[i] - p + r][ vspan[j] - q + l ][d] + Nu[i][r]*grad_temp[l][d];
               
               }
-            
-            
-            
 
             }
-
-          
-
           }
   
       }
