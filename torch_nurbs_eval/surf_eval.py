@@ -44,6 +44,7 @@ class SurfEval(torch.nn.Module):
             self.uspan_uv, self.vspan_uv, self.Nu_uv, self.Nv_uv = cpp_pre_compute_basis(self.u, self.v, self.U, self. V, m, n, p , q, out_dim_u, self._dimension)
             self.Nu_uv = self.Nu_uv.view(out_dim_u, p+1)
             self.Nv_uv = self.Nv_uv.view(out_dim_v, q+1)
+
         # if self.method == 'tc':
         #     self.Nu_uv = self.Nu_uv.repeat(self.v.size(0), 1, 1)
         #     self.Nv_uv = self.Nv_uv.repeat(self.u.size(0), 1, 1)
@@ -56,6 +57,7 @@ class SurfEval(torch.nn.Module):
         objects for use in the backward pass using the ctx.save_for_backward method.
         """
         # input will be of dimension (batch_size, m+1, n+1, dimension)
+
         if self.method == 'cpp':
             out = SurfEvalFunc.apply(input, self.uspan_uv, self.vspan_uv, self.Nu_uv, self.Nv_uv, self.u, self.v, self.m, self.n, self.p, self.q, self._dimension, self.dvc)
             return out

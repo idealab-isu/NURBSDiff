@@ -12,12 +12,13 @@ import offset_eval as off
 
 def main():
     timing = []
-    eval_pts_size = 25
+    eval_pts_size = 27
 
-    # Turbine Blade Surfaces
+    # # Turbine Blade Surfaces
     # num_ctrl_pts1 = 50
     # num_ctrl_pts2 = 24
     # ctrl_pts_2 = np.load('TurbineBladeCtrlPts.npy').astype('float32')
+    # Element_Array = np.array([0, 1])
     # knot_u = np.load('TurbineKnotU.npy')
     # knot_v = np.load('TurbineKnotV.npy')
 
@@ -40,9 +41,8 @@ def main():
     # knot_u = np.array([0.0, 0.0, 0.0, 0.0, 0.33, 0.67, 1.0, 1.0, 1.0, 1.0])
     # knot_v = np.array([0.0, 0.0, 0.0, 0.0, 0.33, 0.67, 1.0, 1.0, 1.0, 1.0])
 
-    off_pts = off.compute_surf_offset(ctrl_pts_2[Element_Array], knot_u, knot_v, 3, 3, eval_pts_size, 0.1)
+    off_pts = off.compute_surf_offset(ctrl_pts_2[Element_Array], knot_u, knot_v, 3, 3, eval_pts_size, 0.3)
     target = torch.from_numpy(np.reshape(off_pts, [Element_Array.size, eval_pts_size, eval_pts_size, 3]))
-
     temp = np.reshape(ctrl_pts_2[Element_Array], [ctrl_pts_2[Element_Array].shape[0], num_ctrl_pts1, num_ctrl_pts2, 4])
     isolate_pts = torch.from_numpy(temp)
     inp_ctrl_pts = torch.nn.Parameter(isolate_pts)
@@ -54,7 +54,10 @@ def main():
         opt.zero_grad()
         # weights = torch.ones(1,num_ctrl_pts1, num_ctrl_pts2, 1)
         out = layer(inp_ctrl_pts)
-        loss = ((target-out)**2).mean()
+        target = target.reshape(target.shape[0],eval_pts_size*eval_pts_size,3)
+        out = out.reshape(target.shape[0],eval_pts_size*eval_pts_size,3)
+        # loss = ((target-out)**2).mean()
+        loss, _ = chamfer_distance(target,out)
         loss.backward()
         opt.step()
 
@@ -62,6 +65,8 @@ def main():
             fig = plt.figure()
             ax = fig.add_subplot(111, projection='3d')
             print(loss.item())
+            target = target.reshape(target.shape[0],eval_pts_size,eval_pts_size,3)
+            out = out.reshape(target.shape[0],eval_pts_size,eval_pts_size,3)
 
             for k in range(target.shape[0]):
                 target_mpl = target[k:k+1].cpu().numpy().squeeze()

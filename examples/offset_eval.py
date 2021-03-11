@@ -81,7 +81,6 @@ def Basis_Surf(u, degree, span_i, knotV):
         left[j] = u - knotV[span_i + 1 - j]
         right[j] = knotV[span_i + j] - u
         saved = 0.0
-
         for r in range(0, j):
             temp = N[r] / (right[r + 1] + left[j - r])
             N[r] = saved + right[r + 1] * temp
@@ -184,45 +183,66 @@ def compute_normal_surface(CNTRL_PTS, knot_u, knot_v, grid_1, grid_2):
     pass
 
 
-def Map_Points(Surf_Pts, Normals):
+def Map_Surf_Points(Surf_Pts, Normals):
 
-    EdgePointMap = np.full([Surf_Pts.shape[0], Surf_Pts.shape[1], 3], -1, dtype=np.int8)
-    count = 0
-    for i in range(EdgePointMap.shape[0]):
+    EdgeSurfPtsMap = np.zeros([Surf_Pts.shape[0], Surf_Pts.shape[1], 3], dtype=np.uint32)
+    for i in range(EdgeSurfPtsMap.shape[0]):
         for k in range(Surf_Pts.shape[1]):
             count = 0
-            for j in range(EdgePointMap.shape[0]):
+            EdgeSurfPtsMap[i][k][0] = count
+            for j in range(EdgeSurfPtsMap.shape[0]):
                 if i != j:
-                    EdgePointMap[i][k][0] = count
-                    test = np.argwhere(Surf_Pts[i, k] == Surf_Pts[j])
-                    # if Surf_Pts[i, k] in Surf_Pts[j]:
-                    if test.size != 0:
-                        count += 1
-                        EdgePointMap[i][k][0] = count
-                        EdgePointMap[i][k][(2 * EdgePointMap[i][k][0]) - 1] = j
-                        EdgePointMap[i][k][(2 * EdgePointMap[i][k][0])] = test[0, 0]
+                    for l in range(Surf_Pts.shape[1]):
+                        if np.linalg.norm(Surf_Pts[i][k] - Surf_Pts[j][l]) == 0.0:
+                            count += 1
+                            EdgeSurfPtsMap[i][k][0] = count
+                            EdgeSurfPtsMap[i][k][(2 * EdgeSurfPtsMap[i][k][0]) - 1] = j
+                            EdgeSurfPtsMap[i][k][(2 * EdgeSurfPtsMap[i][k][0])] = l
 
-    for i in range(EdgePointMap.shape[0]):
-        for j in range(EdgePointMap.shape[1]):
-            if EdgePointMap[i][j][0] != 0:
-                temp = Normals[i][j]
-                for k in range(EdgePointMap[i][j][0]):
-                    temp += Normals[EdgePointMap[i][j][2 * k + 1], EdgePointMap[i][j][2 * k + 2]]
+    for i in range(EdgeSurfPtsMap.shape[0]):
+        for j in range(EdgeSurfPtsMap.shape[1]):
+            if EdgeSurfPtsMap[i][j][0] != 0:
+                temp = np.zeros(3)
+                temp += Normals[i][j]
+                for k in range(EdgeSurfPtsMap[i][j][0]):
+                    temp += Normals[EdgeSurfPtsMap[i][j][2 * k + 1]][EdgeSurfPtsMap[i][j][2 * k + 2]]
 
                 temp_norm = np.linalg.norm(temp)
                 if temp_norm != 0.0:
                     temp /= temp_norm
 
                 Normals[i][j] = temp
-                for k in range(EdgePointMap[i][j][0]):
-                    Normals[EdgePointMap[i][j][2 * k + 1], EdgePointMap[i][j][2 * k + 2]] = temp
+                for k in range(EdgeSurfPtsMap[i][j][0]):
+                    Normals[EdgeSurfPtsMap[i][j][2 * k + 1], EdgeSurfPtsMap[i][j][2 * k + 2]] = temp
                     pass
-
-    print('Max count  ==  ', count)
 
     return Normals
     pass
 
+
+def Map_Ctrl_Point(CntrlPts):
+
+    EdgeCtrlPtsMap = np.zeros([CntrlPts.shape[0], CntrlPts.shape[1], 3], dtype=np.uint16)
+    for i in range(CntrlPts.shape[0]):
+        for k in range(CntrlPts.shape[1]):
+            count = 0
+            EdgeCtrlPtsMap[i][k][0] = count
+            for j in range(CntrlPts.shape[0]):
+                if i != j:
+                    for l in range(CntrlPts.shape[1]):
+                        if np.linalg.norm(CntrlPts[i][k] - CntrlPts[j][l]) == 0.0:
+                            count += 1
+                            EdgeCtrlPtsMap[i][k][0] = count
+                            EdgeCtrlPtsMap[i][k][(2 * EdgeCtrlPtsMap[i][k][0]) - 1] = j
+                            EdgeCtrlPtsMap[i][k][2 * EdgeCtrlPtsMap[i][k][0]] = l
+
+    return EdgeCtrlPtsMap
+    pass
+
+
+def Constraint_CtrlPts():
+
+    pass
 
 def compute_surf_offset(CNTRL_PTS, knot_u, knot_v, degree_u, degree_v, eval_pts_size, thickness):
     delta_u = eval_pts_size
@@ -234,9 +254,11 @@ def compute_surf_offset(CNTRL_PTS, knot_u, knot_v, degree_u, degree_v, eval_pts_
 
     for i in range(0, CNTRL_PTS.shape[0]):
         SURF_PTS[i], NORMALS[i] = compute_normal_surface(CNTRL_PTS[i], knot_u, knot_v, grid_1, grid_2)
-        OFF_PTS[i] = SURF_PTS[i] + (thickness * NORMALS[i])
 
-    # NORMALS = Map_Points(SURF_PTS, NORMALS)
-    # for i in range(CNTRL_PTS.shape[0]):
+    if CNTRL_PTS.shape[0] > 2:
+        NORMALS = Map_Surf_Points(SURF_PTS, NORMALS)
+
+    OFF_PTS = SURF_PTS + (thickness * NORMALS)
 
     return OFF_PTS
+
