@@ -81,7 +81,6 @@ def Basis_Surf(u, degree, span_i, knotV):
         left[j] = u - knotV[span_i + 1 - j]
         right[j] = knotV[span_i + j] - u
         saved = 0.0
-
         for r in range(0, j):
             temp = N[r] / (right[r + 1] + left[j - r])
             N[r] = saved + right[r + 1] * temp

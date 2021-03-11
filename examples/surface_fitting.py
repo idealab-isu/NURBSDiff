@@ -4,10 +4,29 @@ torch.manual_seed(120)
 from tqdm import tqdm
 from pytorch3d.loss import chamfer_distance
 from torch_nurbs_eval.surf_eval import SurfEval
+import matplotlib
+# font = {'family': 'serif',
+#         'weight': 'normal',
+#         'size': 18,
+#         }
+
+
+# matplotlib.rc('font', **font)
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
 from matplotlib import cm
 
+SMALL_SIZE = 14
+MEDIUM_SIZE = 16
+BIGGER_SIZE = 20
+
+plt.rc('font', size=SMALL_SIZE)          # controls default text sizes
+plt.rc('axes', titlesize=SMALL_SIZE)     # fontsize of the axes title
+plt.rc('axes', labelsize=MEDIUM_SIZE)    # fontsize of the x and y labels
+plt.rc('xtick', labelsize=SMALL_SIZE)    # fontsize of the tick labels
+plt.rc('ytick', labelsize=SMALL_SIZE)    # fontsize of the tick labels
+plt.rc('legend', fontsize=SMALL_SIZE)    # legend fontsize
+plt.rc('figure', titlesize=BIGGER_SIZE)  # fontsize of the figure title
 
 def main():
     timing = []
@@ -32,7 +51,7 @@ def main():
 
     layer = SurfEval(num_ctrl_pts1, num_ctrl_pts2, dimension=3, p=3, q=3, out_dim_u=num_eval_pts_u, out_dim_v=num_eval_pts_v)
     opt = torch.optim.Adam(iter([inp_ctrl_pts]), lr=0.01)
-    pbar = tqdm(range(2000))
+    pbar = tqdm(range(5000))
     for i in pbar:
         opt.zero_grad()
         weights = torch.ones(1,num_ctrl_pts1, num_ctrl_pts2, 1)
@@ -46,22 +65,67 @@ def main():
         target = target.reshape(1,num_eval_pts_u,num_eval_pts_v,3)
         out = out.reshape(1,num_eval_pts_u,num_eval_pts_v,3)
 
-        if i%500 == 0:
-            fig = plt.figure()
-            ax = fig.add_subplot(111, projection='3d')
+        if (i+1)%5000 == 0:
+            fig = plt.figure(figsize=(15,4))
+            ax1 = fig.add_subplot(131, projection='3d', adjustable='box', proj_type = 'ortho')
             target_mpl = target.cpu().numpy().squeeze()
             predicted = out.detach().cpu().numpy().squeeze()
-            surf1 = ax.plot_surface(target_mpl[:, :,0],target_mpl[:, :,1],target_mpl[:, :,2], color='blue', label='target')
-            surf2 = ax.plot_surface(predicted[:, :,0], predicted[:, :,1], predicted[:, :,2], color='green', label='predicted')
-            surf1._facecolors2d=surf1._facecolor3d
-            surf1._edgecolors2d=surf1._edgecolor3d
-            surf2._facecolors2d=surf2._facecolor3d
-            surf2._edgecolors2d=surf2._edgecolor3d
-            ax.set_xlabel('X Label')
-            ax.set_ylabel('Y Label')
-            ax.set_zlabel('Z Label')
-            ax.legend()
-            ax.view_init(elev=20., azim=-35)
+            predctrlpts = inp_ctrl_pts.detach().cpu().numpy().squeeze()
+            surf1 = ax1.plot_wireframe(target_mpl[:, :,0],target_mpl[:, :,1],target_mpl[:, :,2], color='blue', label='Target Surface')
+            # ax1.set_zlim(-1,3)
+            # ax1.set_xlim(-1,4)
+            # ax1.set_ylim(-2,2)
+            ax1.azim = 45
+            ax1.dist = 8.5
+            ax1.elev = 30
+            ax1.set_xticks([])
+            ax1.set_yticks([])
+            ax1.set_zticks([])
+            ax1.xaxis.set_pane_color((1.0, 1.0, 1.0, 0.0))
+            ax1.yaxis.set_pane_color((1.0, 1.0, 1.0, 0.0))
+            ax1.zaxis.set_pane_color((1.0, 1.0, 1.0, 0.0))
+            ax1._axis3don = False
+            # ax.legend(loc='upper left')
+            ax2 = fig.add_subplot(132, projection='3d', adjustable='box')
+            surf2 = ax2.plot_wireframe(predicted[:, :,0], predicted[:, :,1], predicted[:, :,2], color='green', label='Predicted Surface')
+            surf2 = ax2.plot_wireframe(predctrlpts[:, :,0],predctrlpts[:, :,1],predctrlpts[:, :,2], linestyle='dashed', color='orange', label='Predicted Control Points')
+            ax2.azim = 45
+            ax2.dist = 8.5
+            ax2.elev = 30
+            ax2.set_xticks([])
+            ax2.set_yticks([])
+            ax2.set_zticks([])
+            ax2.xaxis.set_pane_color((1.0, 1.0, 1.0, 0.0))
+            ax2.yaxis.set_pane_color((1.0, 1.0, 1.0, 0.0))
+            ax2.zaxis.set_pane_color((1.0, 1.0, 1.0, 0.0))
+            ax2._axis3don = False
+            # ax.legend(loc='upper left')
+            # ax.set_xlabel('X')
+            # ax.set_ylabel('Y')
+            # ax.set_zlabel('Z')
+            # ax.set_zlim(-1,3)
+            # ax.set_xlim(-1,4)
+            # ax.set_ylim(-2,2)
+            ax3 = fig.add_subplot(133, adjustable='box')
+            error_map = (((predicted - target_mpl)**2)/target_mpl).sum(-1)
+            # im3 = ax.imshow(error_map, cmap='jet', interpolation='none', extent=[0,128,0,128])
+            im3 = ax3.imshow(error_map, cmap='jet', interpolation='none', extent=[0,128,0,128], vmin=-0.0001, vmax=0.0001)
+            # fig.colorbar(im3, shrink=0.4, aspect=5)
+            fig.colorbar(im3, shrink=0.4, aspect=5, ticks=[-0.0001, 0, 0.0001])
+            ax3.set_xlabel('$u$')
+            ax3.set_ylabel('$v$')
+            x_positions = np.arange(0,128,20) # pixel count at label position
+            plt.xticks(x_positions, x_positions)
+            plt.yticks(x_positions, x_positions)
+            ax3.set_aspect(1)
+            fig.subplots_adjust(hspace=0,wspace=0)
+            fig.tight_layout()
+            lines_labels = [ax.get_legend_handles_labels() for ax in fig.axes]
+            lines, labels = [sum(lol, []) for lol in zip(*lines_labels)]
+
+            # finally we invoke the legend (that you probably would like to customize...)
+
+            fig.legend(lines, labels, ncol=2, loc='lower center', bbox_to_anchor= (0.33, 0.0),)
             plt.show()
         pbar.set_description("Loss %s: %s" % (i+1, loss.item()))
 

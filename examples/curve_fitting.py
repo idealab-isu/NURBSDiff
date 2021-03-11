@@ -192,7 +192,7 @@ def main():
         loss.backward()
         opt.step()
         scheduler.step(loss)
-        if (i+1)%10000 == 0:
+        if (i+1)%1000 == 0:
             target_mpl = target.cpu().numpy().squeeze()
             # pc_mpl = point_cloud.numpy().squeeze()
             predicted = out.detach().cpu().numpy().squeeze()
