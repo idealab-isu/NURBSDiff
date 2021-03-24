@@ -199,6 +199,8 @@ def Map_Surf_Points(Surf_Pts, Normals):
                             EdgeSurfPtsMap[i][k][(2 * EdgeSurfPtsMap[i][k][0]) - 1] = j
                             EdgeSurfPtsMap[i][k][(2 * EdgeSurfPtsMap[i][k][0])] = l
 
+
+
     for i in range(EdgeSurfPtsMap.shape[0]):
         for j in range(EdgeSurfPtsMap.shape[1]):
             if EdgeSurfPtsMap[i][j][0] != 0:
@@ -240,8 +242,21 @@ def Map_Ctrl_Point(CntrlPts):
     pass
 
 
-def Constraint_CtrlPts():
+def Max_size(SurfPts):
+    GlobboxMax = np.full([3], -np.inf)
+    GlobboxMin = np.full([3], np.inf)
 
+    for i in range(SurfPts.shape[0]):
+        bboxMax = np.array([np.max(SurfPts[i, :, 0]), np.max(SurfPts[i, :, 1]), np.max(SurfPts[i, :, 2])])
+        bboxMin = np.array([np.min(SurfPts[i, :, 0]), np.min(SurfPts[i, :, 1]), np.min(SurfPts[i, :, 2])])
+
+        for k in range(3):
+            if GlobboxMax[k] < bboxMax[k]:
+                GlobboxMax[k] = bboxMax[k]
+            if GlobboxMin[k] > bboxMin[k]:
+                GlobboxMin[k] = bboxMin[k]
+
+    return GlobboxMax - GlobboxMin
     pass
 
 def compute_surf_offset(CNTRL_PTS, knot_u, knot_v, degree_u, degree_v, eval_pts_size, thickness):
@@ -255,7 +270,7 @@ def compute_surf_offset(CNTRL_PTS, knot_u, knot_v, degree_u, degree_v, eval_pts_
     for i in range(0, CNTRL_PTS.shape[0]):
         SURF_PTS[i], NORMALS[i] = compute_normal_surface(CNTRL_PTS[i], knot_u, knot_v, grid_1, grid_2)
 
-    if CNTRL_PTS.shape[0] > 2:
+    if CNTRL_PTS.shape[0] > 1:
         NORMALS = Map_Surf_Points(SURF_PTS, NORMALS)
 
     OFF_PTS = SURF_PTS + (thickness * NORMALS)
