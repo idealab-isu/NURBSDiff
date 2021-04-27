@@ -48,12 +48,11 @@ def chamfer_distance_one_side(pred, gt, side=1):
 def main():
     uEvalPtSize = 64
     vEvalPtSize = 32
-
-    f = open('smesh.dat')
+    device = 'cpu'
     dataFileName = 'data.c.txt'
+    f = open('smesh.dat')
     lines = f.readlines()
-
-    order = int(lines[0])
+    dimension = int(lines[0])
     degree = np.array(list(map(int, lines[1].split(' '))))
     CtrlPtsCountUV = list(map(int, lines[2].split(' ')))
 
@@ -78,14 +77,17 @@ def main():
     mumPoints = target.cpu().shape
 
     layer = SurfEval(CtrlPtsCountUV[1], CtrlPtsCountUV[0], knot_u=knotU, knot_v=knotV, dimension=3,
-                     p=degree[0], q=degree[1], out_dim_u=uEvalPtSize, out_dim_v=vEvalPtSize, dvc='cuda')
+                     p=degree[0], q=degree[1], out_dim_u=uEvalPtSize, out_dim_v=vEvalPtSize, dvc=device)
 
-    inpCtrlPts = torch.nn.Parameter(torch.from_numpy(copy.deepcopy(CtrlPtsNoW)).cuda())
+    if device == 'cuda':
+        inpCtrlPts = torch.nn.Parameter(torch.from_numpy(copy.deepcopy(CtrlPtsNoW)).cuda())
+        inpWeight = torch.ones(1, CtrlPtsCountUV[1], CtrlPtsCountUV[0], 1).cuda()
+    else:
+        inpCtrlPts = torch.nn.Parameter(torch.from_numpy(copy.deepcopy(CtrlPtsNoW)))
+        inpWeight = torch.ones(1, CtrlPtsCountUV[1], CtrlPtsCountUV[0], 1)
+    base_out = layer(torch.cat((inpCtrlPts.unsqueeze(0), inpWeight), axis=-1))
 
-    weight = torch.ones(1, CtrlPtsCountUV[1], CtrlPtsCountUV[0], 1).cuda()
-    out_2 = layer(torch.cat((inpCtrlPts.unsqueeze(0), weight), axis=-1))
-
-    BaseAreaSurf = out_2.detach().cpu().numpy().squeeze()
+    BaseAreaSurf = base_out.detach().cpu().numpy().squeeze()
 
     base_length_u = ((BaseAreaSurf[:-1, :-1, :] - BaseAreaSurf[1:, :-1, :]) ** 2).sum(-1).squeeze()
     base_length_v = ((BaseAreaSurf[:-1, :-1, :] - BaseAreaSurf[:-1, 1:, :]) ** 2).sum(-1).squeeze()
@@ -93,12 +95,29 @@ def main():
     base_length_u1 = np.sum(base_length_u[:, -1])
     base_area = np.sum(surf_areas_base)
 
+    base_der11 = ((2 * base_out[:, 1:-1, 1:-1, :] - base_out[:, 0:-2, 1:-1, :] - base_out[:, 2:, 1:-1, :]) ** 2).sum(-1).squeeze()
+    base_der22 = ((2 * base_out[:, 1:-1, 1:-1, :] - base_out[:, 1:-1, 0:-2, :] - base_out[:, 1:-1, 2:, :]) ** 2).sum(-1).squeeze()
+    base_der12 = ((2 * base_out[:, 1:-1, 1:-1, :] - base_out[:, 0:-2, 1:-1, :] - base_out[:, 1:-1, 2:, :]) ** 2).sum(-1).squeeze()
+    base_der21 = ((2 * base_out[:, 1:-1, 1:-1, :] - base_out[:, 1:-1, 0:-2, :] - base_out[:, 2:, 1:-1, :]) ** 2).sum(-1).squeeze()
+    base_surf_curv11 = torch.max(base_der11)
+    base_surf_curv22 = torch.max(base_der22)
+    base_surf_curv12 = torch.max(base_der12)
+    base_surf_curv21 = torch.max(base_der21)
+
+    print('\nBase surface area: ',base_area)
+    print('Max curvatures: ')
+    print(base_surf_curv11.detach().cpu().numpy().squeeze(), base_surf_curv12.detach().cpu().numpy().squeeze())
+    print(base_surf_curv21.detach().cpu().numpy().squeeze(), base_surf_curv22.detach().cpu().numpy().squeeze())
+
     opt = torch.optim.Adam(iter([inpCtrlPts]), lr=0.01)
     pbar = tqdm(range(10000))
     for i in pbar:
         opt.zero_grad()
 
-        weight = torch.ones(1, CtrlPtsCountUV[1], CtrlPtsCountUV[0], 1).cuda()
+        if device == 'cuda':
+            weight = torch.ones(1, CtrlPtsCountUV[1], CtrlPtsCountUV[0], 1).cuda()
+        else:
+            weight = torch.ones(1, CtrlPtsCountUV[1], CtrlPtsCountUV[0], 1)
         out = layer(torch.cat((inpCtrlPts.unsqueeze(0), weight), axis=-1))
 
         length_u = ((out[:, :-1, :-1, :] - out[:, 1:, :-1, :]) ** 2).sum(-1).squeeze()
@@ -116,8 +135,11 @@ def main():
         surf_curv21 = torch.max(der21)
         surf_max_curv = torch.sum(torch.tensor([surf_curv11,surf_curv22,surf_curv12,surf_curv21]))
 
+        if device == 'cuda':
+            lossVal = chamfer_distance_one_side(out.view(1, uEvalPtSize * vEvalPtSize, 3), target.view(1, mumPoints[0], 3).cuda())
+        else:
+            lossVal = chamfer_distance_one_side(out.view(1, uEvalPtSize * vEvalPtSize, 3), target.view(1, mumPoints[0], 3))
 
-        lossVal = chamfer_distance_one_side(out.view(1, uEvalPtSize * vEvalPtSize, 3), target.view(1, mumPoints[0], 3).cuda())
         # loss, _ = chamfer_distance(target.view(1, 360, 3), out.view(1, evalPtSize * evalPtSize, 3))
         if (i < 250):
             lossVal += (.1) * (torch.sum(length_u1) )
