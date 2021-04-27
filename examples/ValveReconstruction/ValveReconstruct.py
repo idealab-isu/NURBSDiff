@@ -9,13 +9,12 @@ import matplotlib.pyplot as plt
 from torch.autograd import Variable
 from mpl_toolkits.mplot3d import Axes3D
 from matplotlib import cm
-import offset_eval as off
 import sys
 import copy
 
 from geomdl import NURBS, multi, exchange
 from geomdl.visualization import VisMPL
-import CPU_Eval as cpu
+# import CPU_Eval as cpu
 
 
 def chamfer_distance_one_side(pred, gt, side=1):
@@ -46,23 +45,22 @@ def chamfer_distance_one_side(pred, gt, side=1):
 
 
 def main():
-    evalPtSize = 25
+    uEvalPtSize = 64
+    vEvalPtSize = 16
 
-    f = open('smesh.3.dat')
+    f = open('smesh.dat')
+    dataFileName = 'data.c.txt'
     lines = f.readlines()
 
     order = int(lines[0])
     degree = np.array(list(map(int, lines[1].split(' '))))
     CtrlPtsCountUV = list(map(int, lines[2].split(' ')))
 
-    CtrlPtsCountUV[0] = 5
-
     CtrlPtsTotal = CtrlPtsCountUV[0] * CtrlPtsCountUV[1]
 
     knotV = np.array(list(map(float, lines[3].split())))
     knotV -= knotV[0]
     knotV /= knotV[-1]
-    knotV = np.array([0, 0, 0, 0, 0.5, 1, 1, 1, 1])
 
     knotU = np.array(list(map(float, lines[4].split())))
     knotU -= knotU[0]
@@ -75,11 +73,11 @@ def main():
         CtrlPts[i] = h
 
     CtrlPtsNoW = np.reshape(CtrlPts[:, :3], [CtrlPtsCountUV[1], CtrlPtsCountUV[0], 3])
-    target = torch.from_numpy(np.genfromtxt('AnteriorPtCloud.txt', delimiter='\t',
-                                            dtype=np.float32))
+    target = torch.from_numpy(np.genfromtxt(dataFileName, delimiter='\t', dtype=np.float32))
+    mumPoints = target.cpu().shape
 
     layer = SurfEval(CtrlPtsCountUV[1], CtrlPtsCountUV[0], knot_u=knotU, knot_v=knotV, dimension=3,
-                     p=degree[0], q=degree[1], out_dim_u=evalPtSize, out_dim_v=evalPtSize)
+                     p=degree[0], q=degree[1], out_dim_u=uEvalPtSize, out_dim_v=vEvalPtSize)
 
     inpCtrlPts = torch.nn.Parameter(torch.from_numpy(copy.deepcopy(CtrlPtsNoW)))
 
@@ -90,8 +88,9 @@ def main():
 
     length1 = ((BaseAreaSurf[0:-1, :, :] - BaseAreaSurf[1:, :, :]) ** 2).sum(-1).squeeze()
     length2 = ((BaseAreaSurf[:, 0:-1, :] - BaseAreaSurf[:, 1:, :]) ** 2).sum(-1).squeeze()
-    surf_areas_base = np.matmul(length1, length2)
-
+    length11 = length1[:,:-1].squeeze()
+    length22 = length2[:-1,:].squeeze()
+    surf_areas_base = np.multiply(length11, length22)
     baseval = np.sum(surf_areas_base)
 
     opt = torch.optim.Adam(iter([inpCtrlPts]), lr=0.01)
@@ -104,19 +103,41 @@ def main():
 
         length1 = ((out[:, 0:-1, :, :] - out[:, 1:, :, :]) ** 2).sum(-1).squeeze()
         length2 = ((out[:, :, 0:-1, :] - out[:, :, 1:, :]) ** 2).sum(-1).squeeze()
-        surf_areas = torch.matmul(length1, length2)
+        length11 = length1[:, :-1].squeeze()
+        length22 = length2[:-1, :].squeeze()
+        surf_areas = torch.multiply(length11, length22)
 
-        lossCD1Side = chamfer_distance_one_side(out.view(1, evalPtSize * evalPtSize, 3), target.view(1, 360, 3))
+        der11 = ((2*out[:, 1:-1, 1:-1, :] - out[:, 0:-2, 1:-1, :] - out[:, 2:, 1:-1, :]) ** 2).sum(-1).squeeze()
+        der22 = ((2*out[:, 1:-1, 1:-1, :] - out[:, 1:-1, 0:-2, :] - out[:, 1:-1, 2:, :]) ** 2).sum(-1).squeeze()
+        der12 = ((2*out[:, 1:-1, 1:-1, :] - out[:, 0:-2, 1:-1, :] - out[:, 1:-1, 2:, :]) ** 2).sum(-1).squeeze()
+        der21 = ((2*out[:, 1:-1, 1:-1, :] - out[:, 1:-1, 0:-2, :] - out[:, 2:, 1:-1, :]) ** 2).sum(-1).squeeze()
+        surf_curv11 = torch.max(der11)
+        surf_curv22 = torch.max(der22)
+        surf_curv12 = torch.max(der12)
+        surf_curv21 = torch.max(der21)
+        surf_max_curv = torch.sum(torch.tensor([surf_curv11,surf_curv22,surf_curv12,surf_curv21]))
+
+
+        lossCD1Side = chamfer_distance_one_side(out.view(1, uEvalPtSize * vEvalPtSize, 3), target.view(1, mumPoints[0], 3))
         # loss, _ = chamfer_distance(target.view(1, 360, 3), out.view(1, evalPtSize * evalPtSize, 3))
-        # if int(i/50)%2 == 1:
-        lossCD1Side += (0.1) * torch.abs(surf_areas.sum() - baseval)
-        lossCD1Side += (0.01) * torch.abs(surf_areas.sum())
+        #if (i < 250):
+        lossCD1Side += (1) * torch.abs(surf_areas.sum() - baseval)
+        lossCD1Side += (10) * torch.abs(surf_max_curv)
         lossCD1Side.backward()
         opt.step()
 
         # Fixing U = 0 Ctrl Pts
         for j in range(0, CtrlPtsCountUV[1]):
             inpCtrlPts.data[j][0] = torch.from_numpy(CtrlPtsNoW[j][0])
+        for j in range(1, CtrlPtsCountUV[0]):
+            temp = 0.5*(inpCtrlPts.data[0][j] + inpCtrlPts.data[-1][j])
+            inpCtrlPts.data[0][j] = temp
+            inpCtrlPts.data[-1][j] = temp
+            # tempdir1 = inpCtrlPts.data[1][j] - inpCtrlPts.data[0][j]
+            # tempdir2 = inpCtrlPts.data[0][j] - inpCtrlPts.data[-1][j]
+            # avgDir = 0.25*(tempdir1+tempdir2)
+            # inpCtrlPts.data[1][j] = inpCtrlPts.data[0][j] + avgDir
+            # inpCtrlPts.data[-1][j] = inpCtrlPts.data[0][j] - avgDir
 
         if i % 500 == 0:
             fig = plt.figure(figsize=(4, 4))
@@ -129,8 +150,8 @@ def main():
             surf1 = ax.scatter(target_cpu[:, 0], target_cpu[:, 1], target_cpu[:, 2], s=3.0, color='red')
             surf2 = ax.plot_surface(predicted[:, :, 0], predicted[:, :, 1], predicted[:, :, 2], color='green',
                                     alpha=0.5)
-            # surf2 = ax.plot_wireframe(predCtrlPts[:, :, 0], predCtrlPts[:, :, 1], predCtrlPts[:, :, 2], linewidth=1,
-            #                   linestyle='dashed', color='orange')
+            surf3 = ax.plot_wireframe(predCtrlPts[:, :, 0], predCtrlPts[:, :, 1], predCtrlPts[:, :, 2], linewidth=1,
+                              linestyle='dashed', color='orange')
             ax.plot(CtrlPtsNoW[:, 0, 0], CtrlPtsNoW[:, 0, 1], CtrlPtsNoW[:, 0, 2], linewidth=3,
                     linestyle='solid', color='green')
 
