@@ -46,7 +46,7 @@ def chamfer_distance_one_side(pred, gt, side=1):
 
 def main():
     uEvalPtSize = 64
-    vEvalPtSize = 16
+    vEvalPtSize = 32
 
     f = open('smesh.dat')
     dataFileName = 'data.c.txt'
@@ -101,11 +101,9 @@ def main():
         weight = torch.ones(1, CtrlPtsCountUV[1], CtrlPtsCountUV[0], 1)
         out = layer(torch.cat((inpCtrlPts.unsqueeze(0), weight), axis=-1))
 
-        length1 = ((out[:, 0:-1, :, :] - out[:, 1:, :, :]) ** 2).sum(-1).squeeze()
-        length2 = ((out[:, :, 0:-1, :] - out[:, :, 1:, :]) ** 2).sum(-1).squeeze()
-        length11 = length1[:, :-1].squeeze()
-        length22 = length2[:-1, :].squeeze()
-        surf_areas = torch.multiply(length11, length22)
+        length1 = ((out[:, :-1, :-1, :] - out[:, 1:, :-1, :]) ** 2).sum(-1).squeeze()
+        length2 = ((out[:, :-1, :-1, :] - out[:, :-1, 1:, :]) ** 2).sum(-1).squeeze()
+        surf_areas = torch.multiply(length1, length2)
 
         der11 = ((2*out[:, 1:-1, 1:-1, :] - out[:, 0:-2, 1:-1, :] - out[:, 2:, 1:-1, :]) ** 2).sum(-1).squeeze()
         der22 = ((2*out[:, 1:-1, 1:-1, :] - out[:, 1:-1, 0:-2, :] - out[:, 1:-1, 2:, :]) ** 2).sum(-1).squeeze()
@@ -148,12 +146,9 @@ def main():
             predCtrlPts = inpCtrlPts.detach().cpu().numpy().squeeze()
 
             surf1 = ax.scatter(target_cpu[:, 0], target_cpu[:, 1], target_cpu[:, 2], s=3.0, color='red')
-            surf2 = ax.plot_surface(predicted[:, :, 0], predicted[:, :, 1], predicted[:, :, 2], color='green',
-                                    alpha=0.5)
-            surf3 = ax.plot_wireframe(predCtrlPts[:, :, 0], predCtrlPts[:, :, 1], predCtrlPts[:, :, 2], linewidth=1,
-                              linestyle='dashed', color='orange')
-            ax.plot(CtrlPtsNoW[:, 0, 0], CtrlPtsNoW[:, 0, 1], CtrlPtsNoW[:, 0, 2], linewidth=3,
-                    linestyle='solid', color='green')
+            surf2 = ax.plot_surface(predicted[:, :, 0], predicted[:, :, 1], predicted[:, :, 2], color='green', alpha=0.5)
+            # surf3 = ax.plot_wireframe(predCtrlPts[:, :, 0], predCtrlPts[:, :, 1], predCtrlPts[:, :, 2], linewidth=1, linestyle='dashed', color='orange')
+            ax.plot(CtrlPtsNoW[:, 0, 0], CtrlPtsNoW[:, 0, 1], CtrlPtsNoW[:, 0, 2], linewidth=3, linestyle='solid', color='green')
 
             ax.azim = -90
             ax.dist = 6.5
