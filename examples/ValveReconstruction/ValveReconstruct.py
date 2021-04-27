@@ -14,6 +14,7 @@ import copy
 
 from geomdl import NURBS, multi, exchange
 from geomdl.visualization import VisMPL
+from geomdl.exchange import export_smesh
 # import CPU_Eval as cpu
 
 
@@ -118,14 +119,14 @@ def main():
 
         lossVal = chamfer_distance_one_side(out.view(1, uEvalPtSize * vEvalPtSize, 3), target.view(1, mumPoints[0], 3))
         # loss, _ = chamfer_distance(target.view(1, 360, 3), out.view(1, evalPtSize * evalPtSize, 3))
-        #if (i < 250):
+        if (i < 250):
+            lossVal += (.1) * (torch.sum(length_u1) )
         # Area change
         lossVal += (1) * torch.abs(surf_areas.sum() - base_area)
         # Minimize maximum curvature
         lossVal += (10) * torch.abs(surf_max_curv)
         # Minimize length of u=1
-        # lossVal += (.01) * (torch.sum(length_u1) - base_length_u1)
-        lossVal += (.01) * (torch.sum(length_u1) )
+        # lossVal += (.01) * torch.abs(torch.sum(length_u1) - base_length_u1)
 
         # Back propagate
         lossVal.backward()
@@ -178,23 +179,29 @@ def main():
             plt.show()
 
         pbar.set_description("Total loss is %s: %s" % (i + 1, lossVal))
-    surf = NURBS.Surface()
+        pass
+
+
+    surf = NURBS.Surface(dimension=3)
     surf.delta = 0.1
 
-    surf.degree_u = degree[0]
-    surf.degree_v = degree[1]
-
-    surf.set_ctrlpts(CtrlPts.tolist(), CtrlPtsCountUV[1], CtrlPtsCountUV[0])
+    surf.degree_u = degree[1]
+    surf.degree_v = degree[0]
+    predCtrlPts = inpCtrlPts.detach().cpu().numpy().squeeze()
+    surf.set_ctrlpts(np.reshape(predCtrlPts,(CtrlPtsCountUV[0]*CtrlPtsCountUV[1], 3)).tolist(), CtrlPtsCountUV[0], CtrlPtsCountUV[1])
 
     surf.knotvector_u = knotV
     surf.knotvector_v = knotU
+    surf.weights = np.ones(CtrlPtsCountUV[0]*CtrlPtsCountUV[1])
+
+    export_smesh(surf, "smesh.out.dat")
 
     surf.evaluate()
-
     vis_config = VisMPL.VisConfig(legend=False, axes=False, ctrlpts=False)
     vis_comp = VisMPL.VisSurface(vis_config)
     surf.vis = vis_comp
     surf.render()
+
 
     pass
 
