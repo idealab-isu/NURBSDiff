@@ -187,8 +187,8 @@ def main():
 
     surf.degree_u = degree[1]
     surf.degree_v = degree[0]
-    predCtrlPts = inpCtrlPts.detach().cpu().numpy().squeeze()
-    surf.set_ctrlpts(np.reshape(predCtrlPts,(CtrlPtsCountUV[0]*CtrlPtsCountUV[1], 3)).tolist(), CtrlPtsCountUV[0], CtrlPtsCountUV[1])
+    predCtrlPts = torch.cat((inpCtrlPts.unsqueeze(0), weight), axis=-1).detach().cpu().numpy().squeeze()
+    surf.set_ctrlpts(np.reshape(predCtrlPts,(CtrlPtsCountUV[0]*CtrlPtsCountUV[1], 4)).tolist(), CtrlPtsCountUV[0], CtrlPtsCountUV[1])
 
     surf.knotvector_u = knotV
     surf.knotvector_v = knotU
