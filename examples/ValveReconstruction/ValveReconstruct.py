@@ -86,12 +86,11 @@ def main():
 
     BaseAreaSurf = out_2.detach().cpu().numpy().squeeze()
 
-    length1 = ((BaseAreaSurf[0:-1, :, :] - BaseAreaSurf[1:, :, :]) ** 2).sum(-1).squeeze()
-    length2 = ((BaseAreaSurf[:, 0:-1, :] - BaseAreaSurf[:, 1:, :]) ** 2).sum(-1).squeeze()
-    length11 = length1[:,:-1].squeeze()
-    length22 = length2[:-1,:].squeeze()
-    surf_areas_base = np.multiply(length11, length22)
-    baseval = np.sum(surf_areas_base)
+    base_length_u = ((BaseAreaSurf[:-1, :-1, :] - BaseAreaSurf[1:, :-1, :]) ** 2).sum(-1).squeeze()
+    base_length_v = ((BaseAreaSurf[:-1, :-1, :] - BaseAreaSurf[:-1, 1:, :]) ** 2).sum(-1).squeeze()
+    surf_areas_base = np.multiply(base_length_u, base_length_v)
+    base_length_u1 = np.sum(base_length_u[:, -1])
+    base_area = np.sum(surf_areas_base)
 
     opt = torch.optim.Adam(iter([inpCtrlPts]), lr=0.01)
     pbar = tqdm(range(20000))
@@ -101,9 +100,10 @@ def main():
         weight = torch.ones(1, CtrlPtsCountUV[1], CtrlPtsCountUV[0], 1)
         out = layer(torch.cat((inpCtrlPts.unsqueeze(0), weight), axis=-1))
 
-        length1 = ((out[:, :-1, :-1, :] - out[:, 1:, :-1, :]) ** 2).sum(-1).squeeze()
-        length2 = ((out[:, :-1, :-1, :] - out[:, :-1, 1:, :]) ** 2).sum(-1).squeeze()
-        surf_areas = torch.multiply(length1, length2)
+        length_u = ((out[:, :-1, :-1, :] - out[:, 1:, :-1, :]) ** 2).sum(-1).squeeze()
+        length_v = ((out[:, :-1, :-1, :] - out[:, :-1, 1:, :]) ** 2).sum(-1).squeeze()
+        length_u1 = length_u[:,-1]
+        surf_areas = torch.multiply(length_u, length_v)
 
         der11 = ((2*out[:, 1:-1, 1:-1, :] - out[:, 0:-2, 1:-1, :] - out[:, 2:, 1:-1, :]) ** 2).sum(-1).squeeze()
         der22 = ((2*out[:, 1:-1, 1:-1, :] - out[:, 1:-1, 0:-2, :] - out[:, 1:-1, 2:, :]) ** 2).sum(-1).squeeze()
@@ -116,12 +116,21 @@ def main():
         surf_max_curv = torch.sum(torch.tensor([surf_curv11,surf_curv22,surf_curv12,surf_curv21]))
 
 
-        lossCD1Side = chamfer_distance_one_side(out.view(1, uEvalPtSize * vEvalPtSize, 3), target.view(1, mumPoints[0], 3))
+        lossVal = chamfer_distance_one_side(out.view(1, uEvalPtSize * vEvalPtSize, 3), target.view(1, mumPoints[0], 3))
         # loss, _ = chamfer_distance(target.view(1, 360, 3), out.view(1, evalPtSize * evalPtSize, 3))
         #if (i < 250):
-        lossCD1Side += (1) * torch.abs(surf_areas.sum() - baseval)
-        lossCD1Side += (10) * torch.abs(surf_max_curv)
-        lossCD1Side.backward()
+        # Area change
+        lossVal += (1) * torch.abs(surf_areas.sum() - base_area)
+        # Minimize maximum curvature
+        lossVal += (10) * torch.abs(surf_max_curv)
+        # Minimize length of u=1
+        # lossVal += (.01) * (torch.sum(length_u1) - base_length_u1)
+        lossVal += (.01) * (torch.sum(length_u1) )
+
+        # Back propagate
+        lossVal.backward()
+
+        # Optimize step
         opt.step()
 
         # Fixing U = 0 Ctrl Pts
@@ -168,7 +177,7 @@ def main():
             fig.tight_layout()
             plt.show()
 
-        pbar.set_description("Chamfer Loss is %s: %s" % (i + 1, lossCD1Side))
+        pbar.set_description("Total loss is %s: %s" % (i + 1, lossVal))
     surf = NURBS.Surface()
     surf.delta = 0.1
 
