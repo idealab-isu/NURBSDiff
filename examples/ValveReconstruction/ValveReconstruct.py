@@ -78,11 +78,11 @@ def main():
     mumPoints = target.cpu().shape
 
     layer = SurfEval(CtrlPtsCountUV[1], CtrlPtsCountUV[0], knot_u=knotU, knot_v=knotV, dimension=3,
-                     p=degree[0], q=degree[1], out_dim_u=uEvalPtSize, out_dim_v=vEvalPtSize)
+                     p=degree[0], q=degree[1], out_dim_u=uEvalPtSize, out_dim_v=vEvalPtSize, dvc='cuda')
 
-    inpCtrlPts = torch.nn.Parameter(torch.from_numpy(copy.deepcopy(CtrlPtsNoW)))
+    inpCtrlPts = torch.nn.Parameter(torch.from_numpy(copy.deepcopy(CtrlPtsNoW)).cuda())
 
-    weight = torch.ones(1, CtrlPtsCountUV[1], CtrlPtsCountUV[0], 1)
+    weight = torch.ones(1, CtrlPtsCountUV[1], CtrlPtsCountUV[0], 1).cuda()
     out_2 = layer(torch.cat((inpCtrlPts.unsqueeze(0), weight), axis=-1))
 
     BaseAreaSurf = out_2.detach().cpu().numpy().squeeze()
@@ -94,11 +94,11 @@ def main():
     base_area = np.sum(surf_areas_base)
 
     opt = torch.optim.Adam(iter([inpCtrlPts]), lr=0.01)
-    pbar = tqdm(range(20000))
+    pbar = tqdm(range(10000))
     for i in pbar:
         opt.zero_grad()
 
-        weight = torch.ones(1, CtrlPtsCountUV[1], CtrlPtsCountUV[0], 1)
+        weight = torch.ones(1, CtrlPtsCountUV[1], CtrlPtsCountUV[0], 1).cuda()
         out = layer(torch.cat((inpCtrlPts.unsqueeze(0), weight), axis=-1))
 
         length_u = ((out[:, :-1, :-1, :] - out[:, 1:, :-1, :]) ** 2).sum(-1).squeeze()
@@ -117,7 +117,7 @@ def main():
         surf_max_curv = torch.sum(torch.tensor([surf_curv11,surf_curv22,surf_curv12,surf_curv21]))
 
 
-        lossVal = chamfer_distance_one_side(out.view(1, uEvalPtSize * vEvalPtSize, 3), target.view(1, mumPoints[0], 3))
+        lossVal = chamfer_distance_one_side(out.view(1, uEvalPtSize * vEvalPtSize, 3), target.view(1, mumPoints[0], 3).cuda())
         # loss, _ = chamfer_distance(target.view(1, 360, 3), out.view(1, evalPtSize * evalPtSize, 3))
         if (i < 250):
             lossVal += (.1) * (torch.sum(length_u1) )
