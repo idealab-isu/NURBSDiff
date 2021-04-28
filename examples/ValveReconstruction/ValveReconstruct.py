@@ -207,14 +207,15 @@ def main():
     surf = NURBS.Surface(dimension=3)
     surf.delta = 0.1
 
-    surf.degree_u = degree[1]
-    surf.degree_v = degree[0]
+    surf.degree_u = degree[0]
+    surf.degree_v = degree[1]
     predCtrlPts = torch.cat((inpCtrlPts.unsqueeze(0), weight), axis=-1).detach().cpu().numpy().squeeze()
-    surf.set_ctrlpts(np.reshape(predCtrlPts,(CtrlPtsCountUV[0]*CtrlPtsCountUV[1], 4)).tolist(), CtrlPtsCountUV[0], CtrlPtsCountUV[1])
+    surf.set_ctrlpts(np.reshape(predCtrlPts,(CtrlPtsCountUV[0]*CtrlPtsCountUV[1], 4)).tolist(), CtrlPtsCountUV[1], CtrlPtsCountUV[0])
 
-    surf.knotvector_u = knotV
-    surf.knotvector_v = knotU
+    surf.knotvector_u = knotU
+    surf.knotvector_v = knotV
     surf.weights = np.ones(CtrlPtsCountUV[0]*CtrlPtsCountUV[1])
+    surf.transpose()
 
     export_smesh(surf, "smesh.out.dat")
 
