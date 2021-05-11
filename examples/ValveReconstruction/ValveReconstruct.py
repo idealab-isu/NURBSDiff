@@ -14,7 +14,7 @@ import copy
 
 from geomdl import NURBS, multi, exchange
 from geomdl.visualization import VisMPL
-from geomdl.exchange import export_smesh
+from geomdl.exchange import export_smesh, import_smesh
 # import CPU_Eval as cpu
 
 
@@ -46,45 +46,37 @@ def chamfer_distance_one_side(pred, gt, side=1):
 
 
 def main():
-    uEvalPtSize = 64
-    vEvalPtSize = 32
-    device = 'cpu'
+    uEvalPtSize = 32
+    vEvalPtSize = 64
+    device = 'cuda'
     dataFileName = 'data.c.txt'
-    f = open('smesh.dat')
-    lines = f.readlines()
-    dimension = int(lines[0])
-    degree = np.array(list(map(int, lines[1].split(' '))))
-    CtrlPtsCountUV = list(map(int, lines[2].split(' ')))
+    smeshFileName = 'smesh.dat'
+    surface = import_smesh(smeshFileName)[0]
+    
 
+    dimension = surface.dimension
+    degree = [surface.degree_u, surface.degree_v]
+    CtrlPtsCountUV = [surface.ctrlpts_size_u, surface.ctrlpts_size_v]
     CtrlPtsTotal = CtrlPtsCountUV[0] * CtrlPtsCountUV[1]
 
-    knotV = np.array(list(map(float, lines[3].split())))
-    knotV -= knotV[0]
-    knotV /= knotV[-1]
+    knotU = surface.knotvector_u
+    knotV = surface.knotvector_v
 
-    knotU = np.array(list(map(float, lines[4].split())))
-    knotU -= knotU[0]
-    knotU /= knotU[-1]
+    CtrlPts = np.array(surface.ctrlptsw)
 
-    CtrlPts = np.empty([CtrlPtsTotal, 4], dtype=np.float32)
-
-    for i in range(0, CtrlPtsTotal):
-        h = list(map(float, lines[i + 5].split()))
-        CtrlPts[i] = h
-
-    CtrlPtsNoW = np.reshape(CtrlPts[:, :3], [CtrlPtsCountUV[1], CtrlPtsCountUV[0], 3])
+    CtrlPtsNoW = np.reshape(CtrlPts[:, :3], [CtrlPtsCountUV[0], CtrlPtsCountUV[1], 3])
     target = torch.from_numpy(np.genfromtxt(dataFileName, delimiter='\t', dtype=np.float32))
     mumPoints = target.cpu().shape
 
-    layer = SurfEval(CtrlPtsCountUV[1], CtrlPtsCountUV[0], knot_u=knotU, knot_v=knotV, dimension=3,
+    layer = SurfEval(CtrlPtsCountUV[0], CtrlPtsCountUV[1], knot_u=knotU, knot_v=knotV, dimension=3,
                      p=degree[0], q=degree[1], out_dim_u=uEvalPtSize, out_dim_v=vEvalPtSize, dvc=device)
 
     if device == 'cuda':
         inpCtrlPts = torch.nn.Parameter(torch.from_numpy(copy.deepcopy(CtrlPtsNoW)).cuda())
-        inpWeight = torch.ones(1, CtrlPtsCountUV[1], CtrlPtsCountUV[0], 1).cuda()
+        inpWeight = torch.ones(1, CtrlPtsCountUV[0], CtrlPtsCountUV[1], 1).cuda()
     else:
         inpCtrlPts = torch.nn.Parameter(torch.from_numpy(copy.deepcopy(CtrlPtsNoW)))
-        inpWeight = torch.ones(1, CtrlPtsCountUV[1], CtrlPtsCountUV[0], 1)
+        inpWeight = torch.ones(1, CtrlPtsCountUV[0], CtrlPtsCountUV[1], 1)
     base_out = layer(torch.cat((inpCtrlPts.unsqueeze(0), inpWeight), axis=-1))
 
     BaseAreaSurf = base_out.detach().cpu().numpy().squeeze()
@@ -115,9 +107,9 @@ def main():
         opt.zero_grad()
 
         if device == 'cuda':
-            weight = torch.ones(1, CtrlPtsCountUV[1], CtrlPtsCountUV[0], 1).cuda()
+            weight = torch.ones(1, CtrlPtsCountUV[0], CtrlPtsCountUV[1], 1).cuda()
         else:
-            weight = torch.ones(1, CtrlPtsCountUV[1], CtrlPtsCountUV[0], 1)
+            weight = torch.ones(1, CtrlPtsCountUV[0], CtrlPtsCountUV[1], 1)
         out = layer(torch.cat((inpCtrlPts.unsqueeze(0), weight), axis=-1))
 
         length_u = ((out[:, :-1, :-1, :] - out[:, 1:, :-1, :]) ** 2).sum(-1).squeeze()
@@ -157,17 +149,16 @@ def main():
         opt.step()
 
         # Fixing U = 0 Ctrl Pts
-        for j in range(0, CtrlPtsCountUV[1]):
-            inpCtrlPts.data[j][0] = torch.from_numpy(CtrlPtsNoW[j][0])
-        for j in range(1, CtrlPtsCountUV[0]):
-            temp = 0.5*(inpCtrlPts.data[0][j] + inpCtrlPts.data[-1][j])
-            inpCtrlPts.data[0][j] = temp
-            inpCtrlPts.data[-1][j] = temp
-            # tempdir1 = inpCtrlPts.data[1][j] - inpCtrlPts.data[0][j]
-            # tempdir2 = inpCtrlPts.data[0][j] - inpCtrlPts.data[-1][j]
-            # avgDir = 0.25*(tempdir1+tempdir2)
-            # inpCtrlPts.data[1][j] = inpCtrlPts.data[0][j] + avgDir
-            # inpCtrlPts.data[-1][j] = inpCtrlPts.data[0][j] - avgDir
+        inpCtrlPts.data[0,:,:] = torch.from_numpy(copy.deepcopy(CtrlPtsNoW[0,:,:]))
+        # Constraining the seam of the cylindrical patch
+        temp = 0.5*(inpCtrlPts.data[:,0,:] + inpCtrlPts.data[:,-1,:])
+        inpCtrlPts.data[:,0,:] = temp
+        inpCtrlPts.data[:,-1,:] = temp
+        # tempdir1 = inpCtrlPts.data[1][j] - inpCtrlPts.data[0][j]
+        # tempdir2 = inpCtrlPts.data[0][j] - inpCtrlPts.data[-1][j]
+        # avgDir = 0.25*(tempdir1+tempdir2)
+        # inpCtrlPts.data[1][j] = inpCtrlPts.data[0][j] + avgDir
+        # inpCtrlPts.data[-1][j] = inpCtrlPts.data[0][j] - avgDir
 
         if i % 500 == 0:
             fig = plt.figure(figsize=(4, 4))
@@ -180,7 +171,7 @@ def main():
             surf1 = ax.scatter(target_cpu[:, 0], target_cpu[:, 1], target_cpu[:, 2], s=3.0, color='red')
             surf2 = ax.plot_surface(predicted[:, :, 0], predicted[:, :, 1], predicted[:, :, 2], color='green', alpha=0.5)
             # surf3 = ax.plot_wireframe(predCtrlPts[:, :, 0], predCtrlPts[:, :, 1], predCtrlPts[:, :, 2], linewidth=1, linestyle='dashed', color='orange')
-            ax.plot(CtrlPtsNoW[:, 0, 0], CtrlPtsNoW[:, 0, 1], CtrlPtsNoW[:, 0, 2], linewidth=3, linestyle='solid', color='green')
+            ax.plot(CtrlPtsNoW[0, :, 0], CtrlPtsNoW[0, :, 1], CtrlPtsNoW[0, :, 2], linewidth=3, linestyle='solid', color='green')
 
             ax.azim = -90
             ax.dist = 6.5
@@ -204,28 +195,14 @@ def main():
         pass
 
 
-    surf = NURBS.Surface(dimension=3)
-    surf.delta = 0.1
-
-    surf.degree_u = degree[0]
-    surf.degree_v = degree[1]
     predCtrlPts = torch.cat((inpCtrlPts.unsqueeze(0), weight), axis=-1).detach().cpu().numpy().squeeze()
-    surf.set_ctrlpts(np.reshape(predCtrlPts,(CtrlPtsCountUV[0]*CtrlPtsCountUV[1], 4)).tolist(), CtrlPtsCountUV[1], CtrlPtsCountUV[0])
-
-    surf.knotvector_u = knotU
-    surf.knotvector_v = knotV
-    surf.weights = np.ones(CtrlPtsCountUV[0]*CtrlPtsCountUV[1])
-    surf.transpose()
-
-    export_smesh(surf, "smesh.out.dat")
-
-    surf.evaluate()
+    surface.ctrlptsw = (np.reshape(predCtrlPts,(CtrlPtsCountUV[0]*CtrlPtsCountUV[1], 4)).tolist())
+    export_smesh(surface, "smesh.out.dat")
+    surface.evaluate()
     vis_config = VisMPL.VisConfig(legend=False, axes=False, ctrlpts=False)
     vis_comp = VisMPL.VisSurface(vis_config)
-    surf.vis = vis_comp
-    surf.render()
-
-
+    surface.vis = vis_comp
+    surface.render()
     pass
 
 
