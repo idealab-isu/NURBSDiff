@@ -49,8 +49,8 @@ def main():
     uEvalPtSize = 32
     vEvalPtSize = 64
     device = 'cuda'
-    dataFileName = 'data.41.txt'
-    smeshFileName = 'smesh.37.dat'
+    dataFileName = 'data.c.txt'
+    smeshFileName = 'smesh.dat'
     surface = import_smesh(smeshFileName)[0]
     
 

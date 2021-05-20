@@ -36,7 +36,7 @@ def main():
     num_ctrl_pts2 = 12
     num_eval_pts_u = 128
     num_eval_pts_v = 128
-    inp_ctrl_pts = torch.rand(1,num_ctrl_pts1, num_ctrl_pts2, 3)
+    inp_ctrl_pts = torch.rand(1,num_ctrl_pts1, num_ctrl_pts2, 3).cuda()
     # weights = torch.ones(1, num_ctrl_pts1, num_ctrl_pts2, 1)
     # inp_ctrl_pts = torch.nn.Parameter(torch.cat((inp_ctrl_pts,weights), -1))
     inp_ctrl_pts = torch.nn.Parameter(inp_ctrl_pts)
@@ -55,15 +55,15 @@ def main():
     Pts = np.reshape(np.array([X, Y, Z]), [1, num_eval_pts_u * num_eval_pts_v, 3])
     Max_Size = off.Max_size(Pts)
 
-    layer = SurfEval(num_ctrl_pts1, num_ctrl_pts2, dimension=3, p=3, q=3, out_dim_u=num_eval_pts_u, out_dim_v=num_eval_pts_v)
+    layer = SurfEval(num_ctrl_pts1, num_ctrl_pts2, dimension=3, p=3, q=3, out_dim_u=num_eval_pts_u, out_dim_v=num_eval_pts_v, method='cpp', dvc='cuda').cuda()
     opt = torch.optim.Adam(iter([inp_ctrl_pts]), lr=0.01)
     pbar = tqdm(range(5000))
     for i in pbar:
         opt.zero_grad()
-        weights = torch.ones(1,num_ctrl_pts1, num_ctrl_pts2, 1)
+        weights = torch.ones(1,num_ctrl_pts1, num_ctrl_pts2, 1).cuda()
         out = layer(torch.cat((inp_ctrl_pts,weights), -1))
         # out = layer(inp_ctrl_pts)
-        target = target.reshape(1,num_eval_pts_u*num_eval_pts_v,3)
+        target = target.reshape(1,num_eval_pts_u*num_eval_pts_v,3).cuda()
         out = out.reshape(1,num_eval_pts_u*num_eval_pts_v,3)
         loss = ((target-out)**2).mean()
         # loss, _ = chamfer_distance(target,out)
