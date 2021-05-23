@@ -156,7 +156,7 @@ std::vector<torch::Tensor>surf_backward(
     
     PYBIND11_MODULE(TORCH_EXTENSION_NAME,m)
     {
-    // m.def("pre_compute_basis", &surf_pre_compute_basis, "Pre-Compute Basis");
+    m.def("pre_compute_basis", &surf_pre_compute_basis, "Pre-Compute Basis");
     m.def("forward", &surf_forward, "Forward function for surface eval");
     m.def("backward",&surf_backward,"Backward function for surface eval");
     }

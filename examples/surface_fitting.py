@@ -3,7 +3,8 @@ import numpy as np
 torch.manual_seed(120)
 from tqdm import tqdm
 from pytorch3d.loss import chamfer_distance
-from torch_nurbs_eval.surf_eval import SurfEval
+from torch_nurbs_eval.nurbs_eval import SurfEval
+from torch_nurbs_eval.utils import gen_knot_vector
 import offset_eval as off
 import matplotlib
 # font = {'family': 'serif',
@@ -34,12 +35,12 @@ def main():
 
     num_ctrl_pts1 = 12
     num_ctrl_pts2 = 12
+    knot_u = torch.nn.Parameter(torch.tensor(gen_knot_vector(3,num_ctrl_pts1)).unsqueeze(0), requires_grad=True)
+    knot_v = torch.nn.Parameter(torch.tensor(gen_knot_vector(3,num_ctrl_pts1)).unsqueeze(0), requires_grad=True)
     num_eval_pts_u = 128
     num_eval_pts_v = 128
-    inp_ctrl_pts = torch.rand(1,num_ctrl_pts1, num_ctrl_pts2, 3).cuda()
-    # weights = torch.ones(1, num_ctrl_pts1, num_ctrl_pts2, 1)
-    # inp_ctrl_pts = torch.nn.Parameter(torch.cat((inp_ctrl_pts,weights), -1))
-    inp_ctrl_pts = torch.nn.Parameter(inp_ctrl_pts)
+    inp_ctrl_pts = torch.rand(1,num_ctrl_pts1, num_ctrl_pts2, 3)#.cuda()
+    inp_ctrl_pts = torch.nn.Parameter(inp_ctrl_pts, requires_grad=True)
     x = np.linspace(-5,5,num=num_eval_pts_u)
     y = np.linspace(-5,5,num=num_eval_pts_v)
     X, Y = np.meshgrid(x, y)
@@ -55,15 +56,16 @@ def main():
     Pts = np.reshape(np.array([X, Y, Z]), [1, num_eval_pts_u * num_eval_pts_v, 3])
     Max_Size = off.Max_size(Pts)
 
-    layer = SurfEval(num_ctrl_pts1, num_ctrl_pts2, dimension=3, p=3, q=3, out_dim_u=num_eval_pts_u, out_dim_v=num_eval_pts_v, method='cpp', dvc='cuda').cuda()
-    opt = torch.optim.Adam(iter([inp_ctrl_pts]), lr=0.01)
-    pbar = tqdm(range(5000))
+    layer = SurfEval(num_ctrl_pts1, num_ctrl_pts2, dimension=3, p=3, q=3, out_dim_u=num_eval_pts_u, out_dim_v=num_eval_pts_v, method='tc', dvc='cpu')#.cuda()
+    weights = torch.nn.Parameter(torch.ones(1,num_ctrl_pts1, num_ctrl_pts2, 1), requires_grad=True)#.cuda()
+    opt = torch.optim.Adam(iter([inp_ctrl_pts,weights]), lr=0.01)
+    pbar = tqdm(range(10000))
     for i in pbar:
         opt.zero_grad()
-        weights = torch.ones(1,num_ctrl_pts1, num_ctrl_pts2, 1).cuda()
-        out = layer(torch.cat((inp_ctrl_pts,weights), -1))
+        # weights = torch.ones(1,num_ctrl_pts1, num_ctrl_pts2, 1)#.cuda()
+        out = layer((torch.cat((inp_ctrl_pts,weights), -1), knot_u, knot_v))
         # out = layer(inp_ctrl_pts)
-        target = target.reshape(1,num_eval_pts_u*num_eval_pts_v,3).cuda()
+        target = target.reshape(1,num_eval_pts_u*num_eval_pts_v,3)#.cuda()
         out = out.reshape(1,num_eval_pts_u*num_eval_pts_v,3)
         loss = ((target-out)**2).mean()
         # loss, _ = chamfer_distance(target,out)
@@ -72,10 +74,11 @@ def main():
         target = target.reshape(1,num_eval_pts_u,num_eval_pts_v,3)
         out = out.reshape(1,num_eval_pts_u,num_eval_pts_v,3)
 
-        if (i+1)%5000 == 0:
+        if (i)%1000 == 0:
             fig = plt.figure(figsize=(15,4))
             ax1 = fig.add_subplot(131, projection='3d', adjustable='box', proj_type = 'ortho')
             target_mpl = target.cpu().numpy().squeeze()
+            # predicted = out.detach().cpu().numpy().squeeze()
             predicted = out.detach().cpu().numpy().squeeze()
             predctrlpts = inp_ctrl_pts.detach().cpu().numpy().squeeze()
             surf1 = ax1.plot_wireframe(target_mpl[:, :,0],target_mpl[:, :,1],target_mpl[:, :,2], color='blue', label='Target Surface')
@@ -95,7 +98,8 @@ def main():
             # ax.legend(loc='upper left')
             ax2 = fig.add_subplot(132, projection='3d', adjustable='box')
             surf2 = ax2.plot_wireframe(predicted[:, :,0], predicted[:, :,1], predicted[:, :,2], color='green', label='Predicted Surface')
-            surf2 = ax2.plot_wireframe(predctrlpts[:, :,0],predctrlpts[:, :,1],predctrlpts[:, :,2], linestyle='dashed', color='orange', label='Predicted Control Points')
+            # surf2 = ax2.plot_surface(predicted[:, :, 0], predicted[:, :, 1], predicted[:, :, 2], color='green', label='Predicted Surface', alpha=0.6)
+            # surf2 = ax2.plot_wireframe(predctrlpts[:, :,0],predctrlpts[:, :,1],predctrlpts[:, :,2], linestyle='dashed', color='orange', label='Predicted Control Points')
             ax2.azim = 45
             ax2.dist = 8.5
             ax2.elev = 30
@@ -115,13 +119,14 @@ def main():
             # ax.set_ylim(-2,2)
             ax3 = fig.add_subplot(133, adjustable='box')
             error_map = (((predicted - target_mpl)**2)/target_mpl).sum(-1)
-            # im3 = ax.imshow(error_map, cmap='jet', interpolation='none', extent=[0,128,0,128])
+            # im3 = ax3.imshow(error_map, cmap='jet', interpolation='none', extent=[0,100,0,100], vmin=-1, vmax=1)
             im3 = ax3.imshow(error_map, cmap='jet', interpolation='none', extent=[0,128,0,128], vmin=-0.0001, vmax=0.0001)
             # fig.colorbar(im3, shrink=0.4, aspect=5)
-            fig.colorbar(im3, shrink=0.4, aspect=5, ticks=[-0.0001, 0, 0.0001])
+            fig.colorbar(im3, shrink=0.4, aspect=5)
+            # fig.colorbar(im3, shrink=0.4, aspect=5, ticks=[-0.0001, 0, 0.0001])
             ax3.set_xlabel('$u$')
             ax3.set_ylabel('$v$')
-            x_positions = np.arange(0,128,20) # pixel count at label position
+            x_positions = np.arange(0,100,20) # pixel count at label position
             plt.xticks(x_positions, x_positions)
             plt.yticks(x_positions, x_positions)
             ax3.set_aspect(1)
@@ -132,10 +137,10 @@ def main():
 
             # finally we invoke the legend (that you probably would like to customize...)
 
-            fig.legend(lines, labels, ncol=2, loc='lower center', bbox_to_anchor= (0.33, 0.0),)
+            # fig.legend(lines, labels, ncol=2, loc='lower center', bbox_to_anchor= (0.33, 0.0),)
             plt.show()
 
-        if loss.item() < 1e-4:
+        if loss.item() < 1e-6:
             break
         pbar.set_description("Loss %s: %s" % (i+1, loss.item()))
 
