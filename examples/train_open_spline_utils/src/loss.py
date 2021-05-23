@@ -253,8 +253,7 @@ def laplacian_loss(output, gt, dist_type="l2"):
     laplacian_output = F.conv2d(output.permute(0, 3, 1, 2), filter, padding=1)
     laplacian_input = F.conv2d(gt.permute(0, 3, 1, 2), filter, padding=1)
     if dist_type == "l2":
-        
-        dist = torch.sum((laplacian_output) ** 2, (1,2,3)) + torch.sum((laplacian_input)**2,(1,2,3)) -2*torch.sum(torch.abs(laplacian_input),(1,2,3))*torch.sum(torch.abs(laplacian_output),(1,2,3))
+        dist = torch.sum((laplacian_output) ** 2, (1,2,3)) - torch.sum((laplacian_input)**2,(1,2,3)) 
         # dist = torch.sum((laplacian_output) ** 2, (1,2,3)) + torch.sum((laplacian_input)**2,(1,2,3))
     elif dist_type == "l1":
         dist = torch.abs(torch.sum(laplacian_output.mean(),1) - torch.sum(laplacian_input.mean(),1))
