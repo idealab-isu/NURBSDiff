@@ -18,17 +18,19 @@ class SurfEval(torch.nn.Module):
         self.m = m
         self.n = n
         self._dimension = dimension
+        self.out_dim_u = out_dim
+        self.out_dim_v = out_dim
         self.p, self.q = p, q
         self.U = torch.Tensor(knot_u).to('cuda')
         self.V = torch.Tensor(knot_v).to('cuda')
         self.u = torch.linspace(0.0, 1.0, steps=out_dim,dtype=torch.float32,device='cuda')
         self.v = torch.linspace(0.0, 1.0, steps=out_dim,dtype=torch.float32,device='cuda')
-        self.uspan_uv, self.vspan_uv, self.Nu_uv, self.Nv_uv = pre_compute_basis(self.u, self.v, self.U, self. V, m, n, p , q, out_dim_u, self._dimension)
+        self.uspan_uv, self.vspan_uv, self.Nu_uv, self.Nv_uv = pre_compute_basis(self.u, self.v, self.U, self.V, m, n, p , q, out_dim_u, self._dimension)
         self.Nu_uv = self.Nu_uv.view(out_dim_u, p+1)
         self.Nv_uv = self.Nv_uv.view(out_dim_v, q+1)
 
 
-    def forward(self,input):
+    def forward(self,inpu,knot_u,knot_v):
         """
         In the forward pass we receive a Tensor containing the input and return
         a Tensor containing the output. ctx is a context object that can be used
@@ -37,6 +39,14 @@ class SurfEval(torch.nn.Module):
         """
         # input will be of dimension (batch_size, m+1, n+1, dimension)
 
+        self.U = torch.Tensor(knot_u).to('cuda')
+        self.V = torch.Tensor(knot_v).to('cuda')
+        self.u = torch.linspace(0.0, 1.0, steps=out_dim,dtype=torch.float32,device='cuda')
+        self.v = torch.linspace(0.0, 1.0, steps=out_dim,dtype=torch.float32,device='cuda')
+        self.uspan_uv, self.vspan_uv, self.Nu_uv, self.Nv_uv = pre_compute_basis(self.u, self.v, self.U, self.V, self.m, self.n, self.p , self.q, self.out_dim_u, self._dimension)
+        self.Nu_uv = self.Nu_uv.view(out_dim_u, p+1)
+        self.Nv_uv = self.Nv_uv.view(out_dim_v, q+1)
+        
         out = SurfEvalFunc.apply(input, self.uspan_uv, self.vspan_uv, self.Nu_uv, self.Nv_uv, self.u, self.v, self.m, self.n, self.p, self.q, self._dimension)
         return out
 
