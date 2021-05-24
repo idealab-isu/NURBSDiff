@@ -49,10 +49,20 @@ def main():
     uEvalPtSize = 32
     vEvalPtSize = 64
     device = 'cuda'
-    dataFileName = 'data.c.txt'
-    smeshFileName = 'smesh.dat'
-    surface = import_smesh(smeshFileName)[0]
-    
+    dataFileName = 'data.41.txt'
+    smeshInFileName = 'smesh.41.in.dat'
+    smeshOutFileName = "smesh.41.out.dat"
+    surface = import_smesh(smeshInFileName)[0]
+
+    # surface1 = import_smesh("smesh.41.in.dat")[0]
+    # surface2 = import_smesh("smesh.45.in.dat")[0]
+    #
+    # surface1CP = np.reshape(np.array(surface.ctrlptsw), [surface1.ctrlpts_size_u, surface1.ctrlpts_size_v, 4])
+    # surface2CP = np.reshape(np.array(surface.ctrlptsw), [surface1.ctrlpts_size_u, surface1.ctrlpts_size_v, 4])
+    #
+    # surface1CP[0,:,:] = surface2CP[0,:,:]
+    # export_smesh(surface1, "smesh.46.in.dat")
+
 
     dimension = surface.dimension
     degree = [surface.degree_u, surface.degree_v]
@@ -84,6 +94,7 @@ def main():
     base_length_u = ((BaseAreaSurf[:-1, :-1, :] - BaseAreaSurf[1:, :-1, :]) ** 2).sum(-1).squeeze()
     base_length_v = ((BaseAreaSurf[:-1, :-1, :] - BaseAreaSurf[:-1, 1:, :]) ** 2).sum(-1).squeeze()
     surf_areas_base = np.multiply(base_length_u, base_length_v)
+    surf_areas_base_torch = torch.from_numpy(surf_areas_base).cuda()
     base_length_u1 = np.sum(base_length_u[:, -1])
     base_area = np.sum(surf_areas_base)
 
@@ -101,7 +112,7 @@ def main():
     print(base_surf_curv11.detach().cpu().numpy().squeeze(), base_surf_curv12.detach().cpu().numpy().squeeze())
     print(base_surf_curv21.detach().cpu().numpy().squeeze(), base_surf_curv22.detach().cpu().numpy().squeeze())
 
-    opt = torch.optim.Adam(iter([inpCtrlPts]), lr=0.01)
+    opt = torch.optim.Adam(iter([inpCtrlPts]), lr=1.0)
     pbar = tqdm(range(10000))
     for i in pbar:
         opt.zero_grad()
@@ -127,16 +138,21 @@ def main():
         surf_curv21 = torch.max(der21)
         surf_max_curv = torch.sum(torch.tensor([surf_curv11,surf_curv22,surf_curv12,surf_curv21]))
 
+        # lossVal = 0
         if device == 'cuda':
             lossVal = chamfer_distance_one_side(out.view(1, uEvalPtSize * vEvalPtSize, 3), target.view(1, mumPoints[0], 3).cuda())
         else:
             lossVal = chamfer_distance_one_side(out.view(1, uEvalPtSize * vEvalPtSize, 3), target.view(1, mumPoints[0], 3))
 
         # loss, _ = chamfer_distance(target.view(1, 360, 3), out.view(1, evalPtSize * evalPtSize, 3))
-        if (i < 250):
-            lossVal += (.1) * (torch.sum(length_u1) )
-        # Area change
+        if (i < 200):
+            lossVal += (1) * torch.abs(torch.sum(length_u1)-base_length_u1)
+
+        # Local area change
+        # lossVal += (1) * torch.sum(torch.abs(surf_areas - surf_areas_base_torch))
+        # Total area change
         lossVal += (1) * torch.abs(surf_areas.sum() - base_area)
+
         # Minimize maximum curvature
         lossVal += (10) * torch.abs(surf_max_curv)
         # Minimize length of u=1
@@ -154,13 +170,15 @@ def main():
         temp = 0.5*(inpCtrlPts.data[:,0,:] + inpCtrlPts.data[:,-1,:])
         inpCtrlPts.data[:,0,:] = temp
         inpCtrlPts.data[:,-1,:] = temp
-        # tempdir1 = inpCtrlPts.data[1][j] - inpCtrlPts.data[0][j]
-        # tempdir2 = inpCtrlPts.data[0][j] - inpCtrlPts.data[-1][j]
-        # avgDir = 0.25*(tempdir1+tempdir2)
-        # inpCtrlPts.data[1][j] = inpCtrlPts.data[0][j] + avgDir
-        # inpCtrlPts.data[-1][j] = inpCtrlPts.data[0][j] - avgDir
 
-        if i % 500 == 0:
+        for j in range(5):
+            tempdir1 = inpCtrlPts.data[j][1] - inpCtrlPts.data[j][0]
+            tempdir2 = inpCtrlPts.data[j][-1] - inpCtrlPts.data[j][-2]
+            avgDir = 0.5*(tempdir1+tempdir2)
+            inpCtrlPts.data[j][1] = inpCtrlPts.data[j][0] + avgDir
+            inpCtrlPts.data[j][-2] = inpCtrlPts.data[j][0] - avgDir
+
+        if i % 200 == 0:
             fig = plt.figure(figsize=(4, 4))
             ax = fig.add_subplot(111, projection='3d', adjustable='box', proj_type='ortho')
 
@@ -197,12 +215,12 @@ def main():
 
     predCtrlPts = torch.cat((inpCtrlPts.unsqueeze(0), weight), axis=-1).detach().cpu().numpy().squeeze()
     surface.ctrlptsw = (np.reshape(predCtrlPts,(CtrlPtsCountUV[0]*CtrlPtsCountUV[1], 4)).tolist())
-    export_smesh(surface, "smesh.out.dat")
-    surface.evaluate()
-    vis_config = VisMPL.VisConfig(legend=False, axes=False, ctrlpts=False)
-    vis_comp = VisMPL.VisSurface(vis_config)
-    surface.vis = vis_comp
-    surface.render()
+    export_smesh(surface, smeshOutFileName)
+    # surface.evaluate()
+    # vis_config = VisMPL.VisConfig(legend=False, axes=False, ctrlpts=False)
+    # vis_comp = VisMPL.VisSurface(vis_config)
+    # surface.vis = vis_comp
+    # surface.render()
     pass
 
 
