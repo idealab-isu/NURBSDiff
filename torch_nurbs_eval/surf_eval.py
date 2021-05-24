@@ -40,63 +40,14 @@ class SurfEval(torch.nn.Module):
             self.u = self.u.cuda()
             self.V = self.V.cuda()
             self.v = self.v.cuda()
-        #     uspan_uv, self.vspan_uv, self.Nu_uv, self.Nv_uv = pre_compute_basis(self.u, self.v, self.U, self.V, m, n, p , q, out_dim_u, self._dimension)            
-        #     self.Nu_uv = self.Nu_uv.view(out_dim_u, p+1)
-        #     self.Nv_uv = self.Nv_uv.view(out_dim_v, q+1)
-        # else:
-        #     self.uspan_uv, self.vspan_uv, self.Nu_uv, self.Nv_uv = cpp_pre_compute_basis(self.u, self.v, self.U, self. V, m, n, p , q, out_dim_u, self._dimension)
-        #     self.Nu_uv = self.Nu_uv.view(out_dim_u, p+1)
-        #     self.Nv_uv = self.Nv_uv.view(out_dim_v, q+1)
+            self.uspan_uv, self.vspan_uv, self.Nu_uv, self.Nv_uv = pre_compute_basis(self.u, self.v, self.U, self.V, m, n, p , q, out_dim_u, self._dimension)            
+            self.Nu_uv = self.Nu_uv.view(out_dim_u, p+1)
+            self.Nv_uv = self.Nv_uv.view(out_dim_v, q+1)
+        else:
+            self.uspan_uv, self.vspan_uv, self.Nu_uv, self.Nv_uv = cpp_pre_compute_basis(self.u, self.v, self.U, self. V, m, n, p , q, out_dim_u, self._dimension)
+            self.Nu_uv = self.Nu_uv.view(out_dim_u, p+1)
+            self.Nv_uv = self.Nv_uv.view(out_dim_v, q+1)
 
-        self.uspan_uv = torch.min(torch.where((self.u-self.U.unsqueeze(1))>1e-8, self.u-self.U.unsqueeze(1), (self.u-self.U.unsqueeze(1))*0.0 + 1),0,keepdim=False)[1]
-        uspan_uv = self.uspan_uv
-        Ni = [self.u*0 for i in range(p+1)]
-        Ni[0] = self.u*0 + 1
-        for k in range(1,p+1):
-            saved = (self.u)*0.0
-            for r in range(k):
-                temp = Ni[r]/((self.U[uspan_uv + r + 1] - self.u) + (self.u - self.U[uspan_uv + 1 - k + r]))
-                Ni[r] = saved + (self.U[uspan_uv + r + 1] - self.u)*temp
-                saved = (self.u - self.U[uspan_uv + 1 - k + r])*temp
-            Ni[k] = saved
-
-        self.Nu_uv = torch.transpose(torch.stack(Ni), 0, 1)
-
-
-        self.vspan_uv = torch.min(torch.where((self.v-self.V.unsqueeze(1))>1e-8, self.v-self.V.unsqueeze(1), (self.v-self.V.unsqueeze(1))*0.0 + 1),0,keepdim=False)[1]
-        vspan_uv = self.vspan_uv
-        Ni = [self.v*0 for i in range(p+1)]
-        Ni[0] = self.v*0 + 1
-        for k in range(1,p+1):
-            saved = (self.v)*0.0
-            for r in range(k):
-                temp = Ni[r]/((self.V[vspan_uv + r + 1] - self.v) + (self.v - self.V[vspan_uv + 1 - k + r]))
-                Ni[r] = saved + (self.V[vspan_uv + r + 1] - self.v)*temp
-                saved = (self.v - self.V[vspan_uv + 1 - k + r])*temp
-            Ni[k] = saved
-
-        self.Nv_uv = torch.transpose(torch.stack(Ni), 0, 1)
-
-                    # left_num = (self.u - self.U[uspan_uv+i])
-                    # left_den = (self.U[uspan_uv+i+p] - self.U[uspan_uv+i])
-                    # right_num = (self.U[uspan_uv+i+p+1] - self.u)
-                    # right_den = (self.U[uspan_uv+i+p+1] - self.U[uspan_uv+i+1])
-                    # print('parametric', self.u[:4], uspan_uv[:4], self.U[uspan_uv+i][:4], self.U[uspan_uv+i+p][:4], self.U[uspan_uv+i+p+1][:4], self.U[uspan_uv+i+1][:4])
-                    # print(left_num[:4], left_den[:4], right_num[:4], right_den[:4])
-                    # exit()
-                    # left = torch.where((left_den==0.0), left_den*0.0, left_num/left_den)
-                    # right = torch.where((right_den==0.0), right_den*0.0, right_num/right_den)
-                    # temp = Ni[k-1]*left + Ni[i]*right
-                    # Ni[i] = temp
-
-            # print(torch.stack(Ni).view(out_dim_u, p+1))
-            # print(self.Nu_uv)
-            # exit()
-            # Ni = torch.stack(Ni).view(out_dim_u, p+1)
-
-        # if self.method == 'tc':
-        #     self.Nu_uv = self.Nu_uv.repeat(self.v.size(0), 1, 1)
-        #     self.Nv_uv = self.Nv_uv.repeat(self.u.size(0), 1, 1)
 
     def forward(self,input):
         """

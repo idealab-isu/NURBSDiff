@@ -112,57 +112,65 @@ def main():
     print(base_surf_curv11.detach().cpu().numpy().squeeze(), base_surf_curv12.detach().cpu().numpy().squeeze())
     print(base_surf_curv21.detach().cpu().numpy().squeeze(), base_surf_curv22.detach().cpu().numpy().squeeze())
 
-    opt = torch.optim.Adam(iter([inpCtrlPts]), lr=1.0)
+    opt = torch.optim.Adam(iter([inpCtrlPts]), lr=0.5)
+    # opt = torch.optim.LBFGS(iter([inpCtrlPts]), lr=0.5, max_iter=5)
+    scheduler = torch.optim.lr_scheduler.MultiStepLR(opt, milestones=[50,100,150,200,250,300], gamma=0.1)
     pbar = tqdm(range(10000))
     for i in pbar:
-        opt.zero_grad()
+        
+        def closure():
+            opt.zero_grad()
+
+            out = layer(torch.cat((inpCtrlPts.unsqueeze(0), weight), axis=-1))
+
+            length_u = ((out[:, :-1, :-1, :] - out[:, 1:, :-1, :]) ** 2).sum(-1).squeeze()
+            length_v = ((out[:, :-1, :-1, :] - out[:, :-1, 1:, :]) ** 2).sum(-1).squeeze()
+            length_u1 = length_u[:,-1]
+            surf_areas = torch.multiply(length_u, length_v)
+
+            der11 = ((2*out[:, 1:-1, 1:-1, :] - out[:, 0:-2, 1:-1, :] - out[:, 2:, 1:-1, :]) ** 2).sum(-1).squeeze()
+            der22 = ((2*out[:, 1:-1, 1:-1, :] - out[:, 1:-1, 0:-2, :] - out[:, 1:-1, 2:, :]) ** 2).sum(-1).squeeze()
+            der12 = ((2*out[:, 1:-1, 1:-1, :] - out[:, 0:-2, 1:-1, :] - out[:, 1:-1, 2:, :]) ** 2).sum(-1).squeeze()
+            der21 = ((2*out[:, 1:-1, 1:-1, :] - out[:, 1:-1, 0:-2, :] - out[:, 2:, 1:-1, :]) ** 2).sum(-1).squeeze()
+            surf_curv11 = torch.max(der11)
+            surf_curv22 = torch.max(der22)
+            surf_curv12 = torch.max(der12)
+            surf_curv21 = torch.max(der21)
+            surf_max_curv = torch.sum(torch.tensor([surf_curv11,surf_curv22,surf_curv12,surf_curv21]))
+
+            # lossVal = 0
+            if device == 'cuda':
+                lossVal = chamfer_distance_one_side(out.view(1, uEvalPtSize * vEvalPtSize, 3), target.view(1, mumPoints[0], 3).cuda())
+            else:
+                lossVal = chamfer_distance_one_side(out.view(1, uEvalPtSize * vEvalPtSize, 3), target.view(1, mumPoints[0], 3))
+
+            # loss, _ = chamfer_distance(target.view(1, 360, 3), out.view(1, evalPtSize * evalPtSize, 3))
+            # if (i < 5):
+            #     lossVal += (1) * torch.abs(torch.sum(length_u1)-base_length_u1)
+
+            # Local area change
+            # lossVal += (1) * torch.sum(torch.abs(surf_areas - surf_areas_base_torch))
+            # Total area change
+            lossVal += (1) * torch.abs(surf_areas.sum() - base_area)
+
+            # Minimize maximum curvature
+            lossVal += (10) * torch.abs(surf_max_curv)
+            # Minimize length of u=1
+            # lossVal += (.01) * torch.abs(torch.sum(length_u1) - base_length_u1)
+
+            # Back propagate
+            lossVal.backward(retain_graph=True)
+            return lossVal
 
         if device == 'cuda':
             weight = torch.ones(1, CtrlPtsCountUV[0], CtrlPtsCountUV[1], 1).cuda()
         else:
             weight = torch.ones(1, CtrlPtsCountUV[0], CtrlPtsCountUV[1], 1)
-        out = layer(torch.cat((inpCtrlPts.unsqueeze(0), weight), axis=-1))
-
-        length_u = ((out[:, :-1, :-1, :] - out[:, 1:, :-1, :]) ** 2).sum(-1).squeeze()
-        length_v = ((out[:, :-1, :-1, :] - out[:, :-1, 1:, :]) ** 2).sum(-1).squeeze()
-        length_u1 = length_u[:,-1]
-        surf_areas = torch.multiply(length_u, length_v)
-
-        der11 = ((2*out[:, 1:-1, 1:-1, :] - out[:, 0:-2, 1:-1, :] - out[:, 2:, 1:-1, :]) ** 2).sum(-1).squeeze()
-        der22 = ((2*out[:, 1:-1, 1:-1, :] - out[:, 1:-1, 0:-2, :] - out[:, 1:-1, 2:, :]) ** 2).sum(-1).squeeze()
-        der12 = ((2*out[:, 1:-1, 1:-1, :] - out[:, 0:-2, 1:-1, :] - out[:, 1:-1, 2:, :]) ** 2).sum(-1).squeeze()
-        der21 = ((2*out[:, 1:-1, 1:-1, :] - out[:, 1:-1, 0:-2, :] - out[:, 2:, 1:-1, :]) ** 2).sum(-1).squeeze()
-        surf_curv11 = torch.max(der11)
-        surf_curv22 = torch.max(der22)
-        surf_curv12 = torch.max(der12)
-        surf_curv21 = torch.max(der21)
-        surf_max_curv = torch.sum(torch.tensor([surf_curv11,surf_curv22,surf_curv12,surf_curv21]))
-
-        # lossVal = 0
-        if device == 'cuda':
-            lossVal = chamfer_distance_one_side(out.view(1, uEvalPtSize * vEvalPtSize, 3), target.view(1, mumPoints[0], 3).cuda())
-        else:
-            lossVal = chamfer_distance_one_side(out.view(1, uEvalPtSize * vEvalPtSize, 3), target.view(1, mumPoints[0], 3))
-
-        # loss, _ = chamfer_distance(target.view(1, 360, 3), out.view(1, evalPtSize * evalPtSize, 3))
-        if (i < 200):
-            lossVal += (1) * torch.abs(torch.sum(length_u1)-base_length_u1)
-
-        # Local area change
-        # lossVal += (1) * torch.sum(torch.abs(surf_areas - surf_areas_base_torch))
-        # Total area change
-        lossVal += (1) * torch.abs(surf_areas.sum() - base_area)
-
-        # Minimize maximum curvature
-        lossVal += (10) * torch.abs(surf_max_curv)
-        # Minimize length of u=1
-        # lossVal += (.01) * torch.abs(torch.sum(length_u1) - base_length_u1)
-
-        # Back propagate
-        lossVal.backward()
 
         # Optimize step
-        opt.step()
+        lossVal = opt.step(closure)
+        scheduler.step()
+        out = layer(torch.cat((inpCtrlPts.unsqueeze(0), weight), axis=-1))
 
         # Fixing U = 0 Ctrl Pts
         inpCtrlPts.data[0,:,:] = torch.from_numpy(copy.deepcopy(CtrlPtsNoW[0,:,:]))
@@ -178,7 +186,7 @@ def main():
             inpCtrlPts.data[j][1] = inpCtrlPts.data[j][0] + avgDir
             inpCtrlPts.data[j][-2] = inpCtrlPts.data[j][0] - avgDir
 
-        if i % 200 == 0:
+        if i % 100 == 0:
             fig = plt.figure(figsize=(4, 4))
             ax = fig.add_subplot(111, projection='3d', adjustable='box', proj_type='ortho')
 
@@ -209,7 +217,7 @@ def main():
             fig.tight_layout()
             plt.show()
 
-        pbar.set_description("Total loss is %s: %s" % (i + 1, lossVal))
+        pbar.set_description("Total loss is %s: %s" % (i + 1, lossVal.item()))
         pass
 
 

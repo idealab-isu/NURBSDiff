@@ -79,11 +79,13 @@ def main():
 
     layer = SurfEval(num_ctrl_pts1, num_ctrl_pts2, dimension=3, p=p, q=q, out_dim_u=num_eval_pts_u, out_dim_v=num_eval_pts_v, method='tc', dvc='cuda').cuda()
     weights = torch.nn.Parameter(torch.ones(1,num_ctrl_pts1, num_ctrl_pts2, 1).cuda(), requires_grad=True)
+    # opt1 = torch.optim.Adam(iter([inp_ctrl_pts, weights]), lr=4e-3)
     opt1 = torch.optim.LBFGS(iter([inp_ctrl_pts, weights]), lr=0.5, max_iter=5)
-    opt2 = torch.optim.Adam(iter([knot_u,knot_v]), lr=3e-4)
-    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(opt1, 'min')
+    opt2 = torch.optim.Adam(iter([knot_u,knot_v]), lr=4e-3)
+    scheduler = torch.optim.lr_scheduler.MultiStepLR(opt1, milestones=[1000,5000,10000,15000,20000], gamma=0.1)
+    # scheduler = torch.optim.lr_scheduler.MultiStepLR(opt1, milestones=[500,1000,1500,2000,2500], gamma=0.1)
 
-    pbar = tqdm(range(30000))
+    pbar = tqdm(range(300))
     for i in pbar:
 
         target = torch.FloatTensor(np.array([X,Y,Z]).T).unsqueeze(0).cuda()
@@ -101,14 +103,15 @@ def main():
             loss.backward(retain_graph=True)
             return loss
         loss = opt1.step(closure)
-        opt2.step()
+        if i > 100:
+            opt2.step()
 
 
         out = layer((torch.cat((inp_ctrl_pts,weights), -1), torch.cat((knot_rep_p,knot_u,knot_rep_q), -1), torch.cat((knot_rep_q,knot_v,knot_rep_q), -1)))
         target = target.reshape(1,num_eval_pts_u,num_eval_pts_v,3)
         out = out.reshape(1,num_eval_pts_u,num_eval_pts_v,3)
 
-        if (i)%500 == 0:
+        if (i)%5000 == 0:
             fig = plt.figure(figsize=(15,4))
             ax1 = fig.add_subplot(131, projection='3d', adjustable='box', proj_type = 'ortho')
             target_mpl = target.cpu().numpy().squeeze()
@@ -241,18 +244,18 @@ def main():
     fig.legend(lines, labels, ncol=2, loc='lower center', bbox_to_anchor= (0.33, 0.0),)
     plt.show()
 
-    layer_2 = SurfEval(num_ctrl_pts1, num_ctrl_pts2, dimension=3, p=3, q=3, out_dim_u=256, out_dim_v=256, dvc='cpp')
-    weights = torch.ones(1, num_ctrl_pts1, num_ctrl_pts2, 1)
-    out_2 = layer_2(torch.cat((inp_ctrl_pts,weights), -1))
-    # out_2 = layer_2(inp_ctrl_pts)
+    # layer_2 = SurfEval(num_ctrl_pts1, num_ctrl_pts2, dimension=3, p=3, q=3, out_dim_u=256, out_dim_v=256, dvc='cpp')
+    # weights = torch.ones(1, num_ctrl_pts1, num_ctrl_pts2, 1)
+    # out_2 = layer_2(torch.cat((inp_ctrl_pts,weights), -1))
+    # # out_2 = layer_2(inp_ctrl_pts)
 
-    target_2 = target.view(1, num_eval_pts_u * num_eval_pts_v, 3)
-    out_2 = out_2.view(1, 256 * 256, 3)
+    # target_2 = target.view(1, num_eval_pts_u * num_eval_pts_v, 3)
+    # out_2 = out_2.view(1, 256 * 256, 3)
 
-    loss, _ = chamfer_distance(target_2, out_2)
+    # loss, _ = chamfer_distance(target_2, out_2)
 
-    print('Max Size are  ==  ', Max_Size)
+    # print('Max Size are  ==  ', Max_Size)
 
-    print('Chamber loss is   ===  ', loss * 10000)
+    # print('Chamber loss is   ===  ', loss * 10000)
 if __name__ == '__main__':
     main()
