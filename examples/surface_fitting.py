@@ -35,12 +35,19 @@ def main():
 
     num_ctrl_pts1 = 12
     num_ctrl_pts2 = 12
-    knot_u = torch.nn.Parameter(torch.tensor(gen_knot_vector(3,num_ctrl_pts1)).unsqueeze(0), requires_grad=True)
-    knot_v = torch.nn.Parameter(torch.tensor(gen_knot_vector(3,num_ctrl_pts1)).unsqueeze(0), requires_grad=True)
-    num_eval_pts_u = 128
-    num_eval_pts_v = 128
-    inp_ctrl_pts = torch.rand(1,num_ctrl_pts1, num_ctrl_pts2, 3)#.cuda()
+    # knot_u = torch.nn.Parameter(torch.tensor(gen_knot_vector(3,num_ctrl_pts1)).unsqueeze(0), requires_grad=True)
+    # knot_v = torch.nn.Parameter(torch.tensor(gen_knot_vector(3,num_ctrl_pts1)).unsqueeze(0), requires_grad=True)
+    p = 3
+    q = 3
+    knot_u = torch.nn.Parameter(torch.rand(1,num_ctrl_pts1+p+1-2*p).cuda(), requires_grad=True)
+    knot_v = torch.nn.Parameter(torch.rand(1,num_ctrl_pts2+q+1-2*q).cuda(), requires_grad=True)
+    num_eval_pts_u = 256
+    num_eval_pts_v = 256
+    inp_ctrl_pts = torch.rand(1,num_ctrl_pts1, num_ctrl_pts2, 3).cuda()
     inp_ctrl_pts = torch.nn.Parameter(inp_ctrl_pts, requires_grad=True)
+
+    '''
+    # sin(X)*cos(Y)
     x = np.linspace(-5,5,num=num_eval_pts_u)
     y = np.linspace(-5,5,num=num_eval_pts_v)
     X, Y = np.meshgrid(x, y)
@@ -51,30 +58,57 @@ def main():
 
     zs = np.array(fun(np.ravel(X), np.ravel(Y)))
     Z = zs.reshape(X.shape)
-    target = torch.FloatTensor(np.array([X,Y,Z]).T).unsqueeze(0)
+    target = torch.FloatTensor(np.array([X,Y,Z]).T).unsqueeze(0).cuda()
+    '''
+
+    # Bukin function
+    x = np.linspace(-15,5,num=num_eval_pts_u)
+    y = np.linspace(-3,5,num=num_eval_pts_v)
+    X, Y = np.meshgrid(x, y)
+
+    def fun(X,Y):
+        Z = 100*np.sqrt(abs(Y - 0.01*X**2)) + 0.01*abs(X + 10)
+        return Z
+
+    zs = np.array(fun(np.ravel(X), np.ravel(Y)))
+    Z = zs.reshape(X.shape)
+
 
     Pts = np.reshape(np.array([X, Y, Z]), [1, num_eval_pts_u * num_eval_pts_v, 3])
     Max_Size = off.Max_size(Pts)
 
-    layer = SurfEval(num_ctrl_pts1, num_ctrl_pts2, dimension=3, p=3, q=3, out_dim_u=num_eval_pts_u, out_dim_v=num_eval_pts_v, method='tc', dvc='cpu')#.cuda()
-    weights = torch.nn.Parameter(torch.ones(1,num_ctrl_pts1, num_ctrl_pts2, 1), requires_grad=True)#.cuda()
-    opt = torch.optim.Adam(iter([inp_ctrl_pts,weights]), lr=0.01)
-    pbar = tqdm(range(10000))
+    layer = SurfEval(num_ctrl_pts1, num_ctrl_pts2, dimension=3, p=p, q=q, out_dim_u=num_eval_pts_u, out_dim_v=num_eval_pts_v, method='tc', dvc='cuda').cuda()
+    weights = torch.nn.Parameter(torch.ones(1,num_ctrl_pts1, num_ctrl_pts2, 1).cuda(), requires_grad=True)
+    opt1 = torch.optim.LBFGS(iter([inp_ctrl_pts, weights]), lr=0.5, max_iter=5)
+    opt2 = torch.optim.Adam(iter([knot_u,knot_v]), lr=3e-4)
+    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(opt1, 'min')
+
+    pbar = tqdm(range(30000))
     for i in pbar:
-        opt.zero_grad()
+
+        target = torch.FloatTensor(np.array([X,Y,Z]).T).unsqueeze(0).cuda()
         # weights = torch.ones(1,num_ctrl_pts1, num_ctrl_pts2, 1)#.cuda()
-        out = layer((torch.cat((inp_ctrl_pts,weights), -1), knot_u, knot_v))
-        # out = layer(inp_ctrl_pts)
-        target = target.reshape(1,num_eval_pts_u*num_eval_pts_v,3)#.cuda()
-        out = out.reshape(1,num_eval_pts_u*num_eval_pts_v,3)
-        loss = ((target-out)**2).mean()
-        # loss, _ = chamfer_distance(target,out)
-        loss.backward()
-        opt.step()
+        knot_rep_p = torch.zeros(1,p).cuda()
+        knot_rep_q = torch.zeros(1,q).cuda()
+        
+        def closure():
+            opt1.zero_grad()
+            opt2.zero_grad()
+            # out = layer(inp_ctrl_pts)
+            out = layer((torch.cat((inp_ctrl_pts,weights), -1), torch.cat((knot_rep_p,knot_u,knot_rep_q), -1), torch.cat((knot_rep_q,knot_v,knot_rep_q), -1)))
+            loss = ((target-out)**2).mean()
+            # loss, _ = chamfer_distance(target,out)
+            loss.backward(retain_graph=True)
+            return loss
+        loss = opt1.step(closure)
+        opt2.step()
+
+
+        out = layer((torch.cat((inp_ctrl_pts,weights), -1), torch.cat((knot_rep_p,knot_u,knot_rep_q), -1), torch.cat((knot_rep_q,knot_v,knot_rep_q), -1)))
         target = target.reshape(1,num_eval_pts_u,num_eval_pts_v,3)
         out = out.reshape(1,num_eval_pts_u,num_eval_pts_v,3)
 
-        if (i)%1000 == 0:
+        if (i)%500 == 0:
             fig = plt.figure(figsize=(15,4))
             ax1 = fig.add_subplot(131, projection='3d', adjustable='box', proj_type = 'ortho')
             target_mpl = target.cpu().numpy().squeeze()

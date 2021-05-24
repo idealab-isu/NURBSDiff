@@ -40,8 +40,12 @@ class SurfEval(torch.nn.Module):
         objects for use in the backward pass using the ctx.save_for_backward method.
         """
         # input will be of dimension (batch_size, m+1, n+1, dimension)
-        ctrl_pts, U, V = input
+        ctrl_pts, knot_u, knot_v = input
 
+        U = torch.cumsum(knot_u, dim=1)
+        U = (U - U[:,0].unsqueeze(-1)) / (U[:,-1].unsqueeze(-1) - U[:,0].unsqueeze(-1))
+        V = torch.cumsum(knot_u, dim=1)
+        V = (V - V[:,0].unsqueeze(-1)) / (V[:,-1].unsqueeze(-1) - V[:,0].unsqueeze(-1))
 
         u = self.u.unsqueeze(0)
 
@@ -50,7 +54,11 @@ class SurfEval(torch.nn.Module):
         # uspan_uv_cpp, vspan_uv_cpp, Nu_uv_cpp, Nv_uv_cpp = cpp_pre_compute_basis(self.u, self.v, self.U, self.V, self.m, self.n, self.p , self.q, self.out_dim_u, self._dimension)
 
 
-        uspan_uv = torch.stack([torch.min(torch.where((u - U[s,:].unsqueeze(1))>1e-8, u - U[s,:].unsqueeze(1), (u - U[s,:].unsqueeze(1))*0.0 + 1),0,keepdim=False)[1] for s in range(U.size(0))])
+        uspan_uv = torch.stack([torch.min(torch.where((u - U[s,self.p:-self.p].unsqueeze(1))>1e-8, u - U[s,self.p:-self.p].unsqueeze(1), (u - U[s,self.p:-self.p].unsqueeze(1))*0.0 + 1),0,keepdim=False)[1]+self.p for s in range(U.size(0))])
+
+        # print(uspan_uv)
+        # print(U)
+        # print(U.size())
 
         u = u.squeeze(0)
         Ni = [u*0 for i in range(self.p+1)]
@@ -69,7 +77,7 @@ class SurfEval(torch.nn.Module):
         Nu_uv = torch.stack(Ni).permute(1,0,2).unsqueeze(2).unsqueeze(-1).unsqueeze(-1)
 
         v = self.v.unsqueeze(0)
-        vspan_uv = torch.stack([torch.min(torch.where((v - V[s,:].unsqueeze(1))>1e-8, v - V[s,:].unsqueeze(1), (v - V[s,:].unsqueeze(1))*0.0 + 1),0,keepdim=False)[1] for s in range(V.size(0))])
+        vspan_uv = torch.stack([torch.min(torch.where((v - V[s,self.q:-self.q].unsqueeze(1))>1e-8, v - V[s,self.q:-self.q].unsqueeze(1), (v - V[s,self.q:-self.q].unsqueeze(1))*0.0 + 1),0,keepdim=False)[1]+self.q for s in range(V.size(0))])
 
 
         Ni = [v*0 for i in range(self.q+1)]
