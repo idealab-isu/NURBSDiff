@@ -5,7 +5,7 @@ comment=""
 model_path = "nips1_{}_{}_{}_bt_{}_lr_{}_trsz_{}_tsz_{}_wght_{}"
 
 # Dataset path
-dataset = "../../../Dataset/open_splines.h5"
+dataset = "../../Dataset/open_splines.h5"
 
 # path to the pre-trained model
 pretrain_model_path = ""
@@ -16,15 +16,15 @@ normals = False
 proportion = 1.0
 
 # number of training instance
-num_train=3200
-num_val=3000
-num_test= 3000
-num_points=700
+num_train=20
+num_val=20
+num_test= 20
+num_points=20
 loss_weight=0.9
 
-batch_size = 36
+batch_size = 1
 
-num_epochs = 150
+num_epochs = 5
 grid_size = 20
 
 optim = adam

@@ -112,8 +112,8 @@ def main():
     print(base_surf_curv11.detach().cpu().numpy().squeeze(), base_surf_curv12.detach().cpu().numpy().squeeze())
     print(base_surf_curv21.detach().cpu().numpy().squeeze(), base_surf_curv22.detach().cpu().numpy().squeeze())
 
-    opt = torch.optim.Adam(iter([inpCtrlPts]), lr=0.5)
-    # opt = torch.optim.LBFGS(iter([inpCtrlPts]), lr=0.5, max_iter=5)
+    # opt = torch.optim.Adam(iter([inpCtrlPts]), lr=0.5)
+    opt = torch.optim.LBFGS(iter([inpCtrlPts]), lr=0.5, max_iter=5)
     scheduler = torch.optim.lr_scheduler.MultiStepLR(opt, milestones=[50,100,150,200,250,300], gamma=0.1)
     pbar = tqdm(range(10000))
     for i in pbar:

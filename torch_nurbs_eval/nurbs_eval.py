@@ -42,10 +42,19 @@ class SurfEval(torch.nn.Module):
         # input will be of dimension (batch_size, m+1, n+1, dimension)
         ctrl_pts, knot_u, knot_v = input
 
-        U = torch.cumsum(knot_u, dim=1)
-        U = (U - U[:,0].unsqueeze(-1)) / (U[:,-1].unsqueeze(-1) - U[:,0].unsqueeze(-1))
-        V = torch.cumsum(knot_u, dim=1)
-        V = (V - V[:,0].unsqueeze(-1)) / (V[:,-1].unsqueeze(-1) - V[:,0].unsqueeze(-1))
+        U_c = torch.cumsum(torch.where(knot_u<0.0, knot_u*0+1e-4, knot_u), dim=1)
+        U = (U_c - U_c[:,0].unsqueeze(-1)) / (U_c[:,-1].unsqueeze(-1) - U_c[:,0].unsqueeze(-1))
+        V_c = torch.cumsum(torch.where(knot_v<0.0, knot_v*0+1e-4, knot_v), dim=1)
+
+        V = (V_c - V_c[:,0].unsqueeze(-1)) / (V_c[:,-1].unsqueeze(-1) - V_c[:,0].unsqueeze(-1))
+
+        if torch.isnan(V).any():
+            print(V_c)
+            print(knot_v)
+
+        if torch.isnan(U).any():
+            print(U_c)
+            print(knot_u)
 
         u = self.u.unsqueeze(0)
 
@@ -57,8 +66,10 @@ class SurfEval(torch.nn.Module):
         uspan_uv = torch.stack([torch.min(torch.where((u - U[s,self.p:-self.p].unsqueeze(1))>1e-8, u - U[s,self.p:-self.p].unsqueeze(1), (u - U[s,self.p:-self.p].unsqueeze(1))*0.0 + 1),0,keepdim=False)[1]+self.p for s in range(U.size(0))])
 
         # print(uspan_uv)
+        # print(knot_u)
         # print(U)
         # print(U.size())
+        # exit()
 
         u = u.squeeze(0)
         Ni = [u*0 for i in range(self.p+1)]
@@ -69,6 +80,7 @@ class SurfEval(torch.nn.Module):
                 UList1 = torch.stack([U[s,uspan_uv[s,:] + r + 1] for s in range(U.size(0))])
                 UList2 = torch.stack([U[s,uspan_uv[s,:] + 1 - k + r] for s in range(U.size(0))])
                 temp = Ni[r]/((UList1 - u) + (u - UList2))
+                temp = torch.where(((UList1 - u) + (u - UList2))==0.0, u*0+1e-4, temp)
                 Ni[r] = saved + (UList1 - u)*temp
                 saved = (u - UList2)*temp
             Ni[k] = saved
@@ -88,6 +100,7 @@ class SurfEval(torch.nn.Module):
                 VList1 = torch.stack([V[s,vspan_uv[s,:] + r + 1] for s in range(V.size(0))])
                 VList2 = torch.stack([V[s,vspan_uv[s,:] + 1 - k + r] for s in range(V.size(0))])
                 temp = Ni[r]/((VList1 - v) + (v - VList2))
+                temp = torch.where(((VList1 - v) + (v - VList2))==0.0, v*0+1e-4, temp)
                 Ni[r] = saved + (VList1 - v)*temp
                 saved = (v - VList2)*temp
             Ni[k] = saved
@@ -98,7 +111,10 @@ class SurfEval(torch.nn.Module):
 
         pts = torch.stack([torch.stack([torch.stack([ctrl_pts[s,(uspan_uv[s,:]-self.p+l),:,:][:,(vspan_uv[s,:]-self.q+r),:] \
             for r in range(self.q+1)]) for l in range(self.p+1)]) for s in range(U.size(0))])
-        
+
+
+        # rational_pts = pts[:, :, :, :, :, :self._dimension]*pts[:, :, :, :, :, self._dimension:]
+        # pts = torch.cat((rational_pts,pts[:, :, :, :, :, self._dimension:]),-1)
 
         # print((Nu_uv*Nv_uv).size(), pts.size())
         surfaces = torch.sum((Nu_uv*pts)*Nv_uv, (1,2))
