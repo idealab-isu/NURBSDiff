@@ -172,7 +172,7 @@ def main():
     scheduler = torch.optim.lr_scheduler.MultiStepLR(opt2, milestones=[15, 50, 200], gamma=0.01)
     # scheduler = torch.optim.lr_scheduler.MultiStepLR(opt1, milestones=[500,1000,1500,2000,2500], gamma=0.1)
 
-    pbar = tqdm(range(30))
+    pbar = tqdm(range(2000))
     for i in pbar:
 
         target = torch.FloatTensor(np.array([X,Y,Z]).T).unsqueeze(0).cuda()

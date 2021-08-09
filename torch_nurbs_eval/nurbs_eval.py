@@ -57,57 +57,19 @@ class SurfEval(torch.nn.Module):
             print(knot_u)
 
         u = self.u.unsqueeze(0)
-
-        # self.U = torch.Tensor(np.array(gen_knot_vector(self.p, self.m)))
-        # self.V = torch.Tensor(np.array(gen_knot_vector(self.q, self.n)))
-        # uspan_uv_cpp, vspan_uv_cpp, Nu_uv_cpp, Nv_uv_cpp = cpp_pre_compute_basis(self.u, self.v, self.U, self.V, self.m, self.n, self.p , self.q, self.out_dim_u, self._dimension)
-
+        v = self.v.unsqueeze(0)
 
         uspan_uv = torch.stack([torch.min(torch.where((u - U[s,self.p:-self.p].unsqueeze(1))>1e-8, u - U[s,self.p:-self.p].unsqueeze(1), (u - U[s,self.p:-self.p].unsqueeze(1))*0.0 + 1),0,keepdim=False)[1]+self.p for s in range(U.size(0))])
-
-        # print(uspan_uv)
-        # print(knot_u)
-        # print(U)
-        # print(U.size())
-        # exit()
-
-        u = u.squeeze(0)
-        Ni = [u*0 for i in range(self.p+1)]
-        Ni[0] = u*0 + 1
-        for k in range(1,self.p+1):
-            saved = (u)*0.0
-            for r in range(k):
-                UList1 = torch.stack([U[s,uspan_uv[s,:] + r + 1] for s in range(U.size(0))])
-                UList2 = torch.stack([U[s,uspan_uv[s,:] + 1 - k + r] for s in range(U.size(0))])
-                temp = Ni[r]/((UList1 - u) + (u - UList2))
-                temp = torch.where(((UList1 - u) + (u - UList2))==0.0, u*0+1e-4, temp)
-                Ni[r] = saved + (UList1 - u)*temp
-                saved = (u - UList2)*temp
-            Ni[k] = saved
-
-        # Nu_uv = torch.stack(Ni)
-        Nu_uv = torch.stack(Ni).permute(1,0,2).unsqueeze(2).unsqueeze(-1).unsqueeze(-1)
-
-        v = self.v.unsqueeze(0)
         vspan_uv = torch.stack([torch.min(torch.where((v - V[s,self.q:-self.q].unsqueeze(1))>1e-8, v - V[s,self.q:-self.q].unsqueeze(1), (v - V[s,self.q:-self.q].unsqueeze(1))*0.0 + 1),0,keepdim=False)[1]+self.q for s in range(V.size(0))])
 
+        Nu_uv = BasisFunc.apply(u, U, uspan_uv, self.p)
 
-        Ni = [v*0 for i in range(self.q+1)]
-        Ni[0] = v*0 + 1
-        for k in range(1,self.q+1):
-            saved = (v)*0.0
-            for r in range(k):
-                VList1 = torch.stack([V[s,vspan_uv[s,:] + r + 1] for s in range(V.size(0))])
-                VList2 = torch.stack([V[s,vspan_uv[s,:] + 1 - k + r] for s in range(V.size(0))])
-                temp = Ni[r]/((VList1 - v) + (v - VList2))
-                temp = torch.where(((VList1 - v) + (v - VList2))==0.0, v*0+1e-4, temp)
-                Ni[r] = saved + (VList1 - v)*temp
-                saved = (v - VList2)*temp
-            Ni[k] = saved
+        Nu_uv = Nu_uv.unsqueeze(2).unsqueeze(-1).unsqueeze(-1)
 
-        # Nv_uv = torch.stack(Ni)
-        Nv_uv = torch.stack(Ni).permute(1,0,2).unsqueeze(1).unsqueeze(-1).unsqueeze(-3)
 
+        Nv_uv = BasisFunc.apply(v, V, vspan_uv, self.q)
+
+        Nv_uv = Nv_uv.unsqueeze(1).unsqueeze(-1).unsqueeze(-3)
 
         pts = torch.stack([torch.stack([torch.stack([ctrl_pts[s,(uspan_uv[s,:]-self.p+l),:,:][:,(vspan_uv[s,:]-self.q+r),:] \
             for r in range(self.q+1)]) for l in range(self.p+1)]) for s in range(U.size(0))])
@@ -126,4 +88,45 @@ class SurfEval(torch.nn.Module):
         return surfaces
 
 
+
+class BasisFunc(torch.autograd.Function):
+
+    @staticmethod
+    def forward(ctx, u, U, uspan_uv, p):
+        ctx.save_for_backward(U)
+        ctx.uspan_uv = uspan_uv
+        ctx.p = p
+
+        u = u.squeeze(0)
+        Ni = [u*0 for i in range(p+1)]
+        Ni[0] = u*0 + 1
+        for k in range(1,p+1):
+            saved = (u)*0.0
+            for r in range(k):
+                UList1 = torch.stack([U[s, uspan_uv[s,:] + r + 1] for s in range(U.size(0))])
+                UList2 = torch.stack([U[s, uspan_uv[s,:] + 1 - k + r] for s in range(U.size(0))])
+                temp = Ni[r]/((UList1 - u) + (u - UList2))
+                temp = torch.where(((UList1 - u) + (u - UList2))==0.0, u*0+1e-8, temp)
+                Ni[r] = saved + (UList1 - u)*temp
+                saved = (u - UList2)*temp
+            Ni[k] = saved
+
+        Nu_uv = torch.stack(Ni).permute(1,0,2)
+        ctx.Nu_uv = Nu_uv
+        return Nu_uv
+
+    @staticmethod
+    def backward(ctx, grad_output):
+        U = ctx.saved_tensors[0]
+        uspan_uv = ctx.uspan_uv
+        p = ctx.p
+        Nu_uv = ctx.Nu_uv
+
+        dU = U*0
+
+        for s in range(U.size(0)):
+            for k in range(0,p+1):
+                dU[s, uspan_uv[s,:]] += grad_output[s, k, :]*Nu_uv[s, k, :]*((1/10)**2)
+
+        return Variable(U*0), Variable(dU), Variable(U*0), None
 
