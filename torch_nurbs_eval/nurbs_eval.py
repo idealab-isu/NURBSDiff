@@ -56,20 +56,67 @@ class SurfEval(torch.nn.Module):
             print(U_c)
             print(knot_u)
 
-        u = self.u.unsqueeze(0)
-        v = self.v.unsqueeze(0)
+        #############################################################################
+        #################### Gaussian gradient smoothening ##########################
 
+        # u = self.u.unsqueeze(0)
+        # v = self.v.unsqueeze(0)
+
+        # uspan_uv = torch.stack([torch.min(torch.where((u - U[s,self.p:-self.p].unsqueeze(1))>1e-8, u - U[s,self.p:-self.p].unsqueeze(1), (u - U[s,self.p:-self.p].unsqueeze(1))*0.0 + 1),0,keepdim=False)[1]+self.p for s in range(U.size(0))])
+        # vspan_uv = torch.stack([torch.min(torch.where((v - V[s,self.q:-self.q].unsqueeze(1))>1e-8, v - V[s,self.q:-self.q].unsqueeze(1), (v - V[s,self.q:-self.q].unsqueeze(1))*0.0 + 1),0,keepdim=False)[1]+self.q for s in range(V.size(0))])
+
+        # Nu_uv = BasisFunc.apply(u, U, uspan_uv, self.p)
+
+        # Nu_uv = Nu_uv.unsqueeze(2).unsqueeze(-1).unsqueeze(-1)
+
+
+        # Nv_uv = BasisFunc.apply(v, V, vspan_uv, self.q)
+
+        # Nv_uv = Nv_uv.unsqueeze(1).unsqueeze(-1).unsqueeze(-3)
+
+
+        #############################################################################
+        #################### Autograd based definition ##############################
+        u = self.u.unsqueeze(0)
         uspan_uv = torch.stack([torch.min(torch.where((u - U[s,self.p:-self.p].unsqueeze(1))>1e-8, u - U[s,self.p:-self.p].unsqueeze(1), (u - U[s,self.p:-self.p].unsqueeze(1))*0.0 + 1),0,keepdim=False)[1]+self.p for s in range(U.size(0))])
+
+        u = u.squeeze(0)
+        Ni = [u*0 for i in range(self.p+1)]
+        Ni[0] = u*0 + 1
+        for k in range(1,self.p+1):
+            saved = (u)*0.0
+            for r in range(k):
+                UList1 = torch.stack([U[s,uspan_uv[s,:] + r + 1] for s in range(U.size(0))])
+                UList2 = torch.stack([U[s,uspan_uv[s,:] + 1 - k + r] for s in range(U.size(0))])
+                temp = Ni[r]/((UList1 - u) + (u - UList2))
+                temp = torch.where(((UList1 - u) + (u - UList2))==0.0, u*0+1e-4, temp)
+                Ni[r] = saved + (UList1 - u)*temp
+                saved = (u - UList2)*temp
+            Ni[k] = saved
+
+        Nu_uv = torch.stack(Ni).permute(1,0,2).unsqueeze(2).unsqueeze(-1).unsqueeze(-1)
+
+        v = self.v.unsqueeze(0)
         vspan_uv = torch.stack([torch.min(torch.where((v - V[s,self.q:-self.q].unsqueeze(1))>1e-8, v - V[s,self.q:-self.q].unsqueeze(1), (v - V[s,self.q:-self.q].unsqueeze(1))*0.0 + 1),0,keepdim=False)[1]+self.q for s in range(V.size(0))])
 
-        Nu_uv = BasisFunc.apply(u, U, uspan_uv, self.p)
 
-        Nu_uv = Nu_uv.unsqueeze(2).unsqueeze(-1).unsqueeze(-1)
+        Ni = [v*0 for i in range(self.q+1)]
+        Ni[0] = v*0 + 1
+        for k in range(1,self.q+1):
+            saved = (v)*0.0
+            for r in range(k):
+                VList1 = torch.stack([V[s,vspan_uv[s,:] + r + 1] for s in range(V.size(0))])
+                VList2 = torch.stack([V[s,vspan_uv[s,:] + 1 - k + r] for s in range(V.size(0))])
+                temp = Ni[r]/((VList1 - v) + (v - VList2))
+                temp = torch.where(((VList1 - v) + (v - VList2))==0.0, v*0+1e-4, temp)
+                Ni[r] = saved + (VList1 - v)*temp
+                saved = (v - VList2)*temp
+            Ni[k] = saved
 
+        Nv_uv = torch.stack(Ni).permute(1,0,2).unsqueeze(1).unsqueeze(-1).unsqueeze(-3)
 
-        Nv_uv = BasisFunc.apply(v, V, vspan_uv, self.q)
-
-        Nv_uv = Nv_uv.unsqueeze(1).unsqueeze(-1).unsqueeze(-3)
+        ################################################################################
+        ################################################################################
 
         pts = torch.stack([torch.stack([torch.stack([ctrl_pts[s,(uspan_uv[s,:]-self.p+l),:,:][:,(vspan_uv[s,:]-self.q+r),:] \
             for r in range(self.q+1)]) for l in range(self.p+1)]) for s in range(U.size(0))])
@@ -95,6 +142,7 @@ class BasisFunc(torch.autograd.Function):
     def forward(ctx, u, U, uspan_uv, p):
         ctx.save_for_backward(U)
         ctx.uspan_uv = uspan_uv
+        ctx.u = u
         ctx.p = p
 
         u = u.squeeze(0)
@@ -121,12 +169,44 @@ class BasisFunc(torch.autograd.Function):
         uspan_uv = ctx.uspan_uv
         p = ctx.p
         Nu_uv = ctx.Nu_uv
+        u = ctx.u
+
+        UList = torch.stack([U[s, uspan_uv[s,:]] for s in range(U.size(0))])
+
+        dNi = [grad_output[:,0,:]*0 for i in range(p+1)]
+        dNi[0] = grad_output[:,0,:]*0 + 0.5*UList*Nu_uv[:,0,:]
+
+        for k in reversed(range(1,p+1)):
+            tempdNi = dNi[k]*grad_output[:,k,:]
+            for r in reversed(range(k)):
+                UList1 = torch.stack([U[s, uspan_uv[s,:] + r + 1] for s in range(U.size(0))])
+                UList2 = torch.stack([U[s, uspan_uv[s,:] + 1 - k + r] for s in range(U.size(0))])
+                tempdNi = tempdNi*(u-UList2)
+                dNi[r] += (UList1 - u)*tempdNi
+                dNi[r] = dNi[r]/((UList1 - u) + (u - UList2))
+
+        dNu_uv = torch.stack(dNi).permute(1,0,2)
 
         dU = U*0
-
         for s in range(U.size(0)):
             for k in range(0,p+1):
-                dU[s, uspan_uv[s,:]] += grad_output[s, k, :]*Nu_uv[s, k, :]*((1/10)**2)
+                dU[s, :].scatter_(-1, (uspan_uv[s,:] + k).type_as(uspan_uv), dNu_uv[s, k, :], reduce='add')
+        dU = dU*U
+
+
+        # for s in range(U.size(0)):
+        #     for t in range(uspan_uv.size(1)):
+        #         for k in range(1,p+1):
+        #             tempdU = dU*0
+        #             for r in range(k):
+        #                 tempdU[s, uspan_uv[s,t] + r] += grad_output[s, r, t]*U[s, uspan_uv[s,t] + r + 1]
+        #                 tempdU[s, uspan_uv[s,:] + r + 1] += (-1)*grad_output[s, 1 - k + r, t]*U[s, uspan_uv[s,:] + 1 - k + r]
+        #             dU += tempdU
+
+        # dU = U*0
+        # for s in range(U.size(0)):
+        #     for k in range(0,p+1):
+        #         dU[s, uspan_uv[s,:]] += grad_output[s, k, :]*Nu_uv[s, k, :]*((100/1.00)**2)
 
         return Variable(U*0), Variable(dU), Variable(U*0), None
 

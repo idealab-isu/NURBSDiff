@@ -86,38 +86,38 @@ def chamfer_distance_two_side(pred, gt, side=1):
 def main():
     timing = []
 
-    num_ctrl_pts_u = 8
-    num_ctrl_pts_v = 8
+    num_ctrl_pts_u = 10
+    num_ctrl_pts_v = 10
     # knot_int_u = torch.nn.Parameter(torch.tensor(gen_knot_int_vector(3,num_ctrl_pts_u)).unsqueeze(0), requires_grad=True)
     # knot_int_v = torch.nn.Parameter(torch.tensor(gen_knot_int_vector(3,num_ctrl_pts_u)).unsqueeze(0), requires_grad=True)
-    p = 3
-    q = 3
+    p = 5
+    q = 5
     knot_int_u = torch.nn.Parameter(torch.ones(num_ctrl_pts_u+p+1-2*p-1).unsqueeze(0).cuda(), requires_grad=True)
     # knot_int_u.data[0,3] = 0.0
     knot_int_v = torch.nn.Parameter(torch.ones(num_ctrl_pts_v+q+1-2*q-1).unsqueeze(0).cuda(), requires_grad=True)
     # knot_int_v.data[0,3] = 0.0
-    num_eval_pts_u = 256
-    num_eval_pts_v = 256
+    num_eval_pts_u = 128
+    num_eval_pts_v = 128
 
 
 
 
-    '''
+    
     # sin(X)*cos(Y)
-    x = np.linspace(-5,5,num=num_eval_pts_u)
-    y = np.linspace(-5,5,num=num_eval_pts_v)
+    x = np.linspace(-50,50,num=num_eval_pts_u)
+    y = np.linspace(-50,50,num=num_eval_pts_v)
     X, Y = np.meshgrid(x, y)
 
     def fun(X,Y):
-        Z = np.sin(X)*np.cos(Y)
+        Z = 2*X*Y*np.sin(0.1*X)*np.cos(0.1*Y)
         return Z
 
     zs = np.array(fun(np.ravel(X), np.ravel(Y)))
     Z = zs.reshape(X.shape)
     target = torch.FloatTensor(np.array([X,Y,Z]).T).unsqueeze(0).cuda()
-    '''
-
     
+
+    '''
     # Bukin function
     x = np.linspace(-15,5,num=num_eval_pts_u)
     y = np.linspace(-3,5,num=num_eval_pts_v)
@@ -129,6 +129,7 @@ def main():
 
     zs = np.array(fun(np.ravel(X), np.ravel(Y)))
     Z = zs.reshape(X.shape)
+    '''
 
     '''
     # Goldstein-Price function
@@ -144,6 +145,33 @@ def main():
     Z = zs.reshape(X.shape)
     '''
 
+    '''
+    # Simple plane
+    x = np.linspace(-15,5,num=num_eval_pts_u)
+    y = np.linspace(-3,5,num=num_eval_pts_v)
+    X, Y = np.meshgrid(x, y)
+
+    def fun(X,Y):
+        Z = 2*X + 3*Y
+        return Z
+
+    zs = np.array(fun(np.ravel(X), np.ravel(Y)))
+    Z = zs.reshape(X.shape)
+    '''
+
+    '''
+    # Quadratic plane
+    x = np.linspace(-15,5,num=num_eval_pts_u)
+    y = np.linspace(-3,5,num=num_eval_pts_v)
+    X, Y = np.meshgrid(x, y)
+
+    def fun(X,Y):
+        Z = 2*X**3 + 3*Y**3
+        return Z
+
+    zs = np.array(fun(np.ravel(X), np.ravel(Y)))
+    Z = zs.reshape(X.shape)
+    '''
 
     x = np.array([np.linspace(-15,5,num=num_ctrl_pts_u) for _ in range(num_ctrl_pts_v)])
     y = np.array([np.linspace(-3,5,num=num_ctrl_pts_v) for _ in range(num_ctrl_pts_u)]).T
@@ -165,14 +193,14 @@ def main():
     layer = SurfEval(num_ctrl_pts_u, num_ctrl_pts_v, dimension=3, p=p, q=q, out_dim_u=num_eval_pts_u, out_dim_v=num_eval_pts_v, method='tc', dvc='cuda').cuda()
     weights = torch.nn.Parameter(torch.ones(1,num_ctrl_pts_u, num_ctrl_pts_v, 1).cuda(), requires_grad=True)
     # opt1 = torch.optim.Adam(iter([inp_ctrl_pts, weights]), lr=4e-3)
-    opt1 = torch.optim.LBFGS(iter([inp_ctrl_pts, weights]), lr=0.5, max_iter=5)
+    opt1 = torch.optim.LBFGS(iter([inp_ctrl_pts, weights]), lr=0.5, max_iter=3)
     # opt1 = torch.optim.Adam(iter([inp_ctrl_pts, weights]), lr=0.01)
-    opt2 = torch.optim.SGD(iter([knot_int_u,knot_int_v]), lr=5e-4)
+    opt2 = torch.optim.SGD(iter([knot_int_u,knot_int_v]), lr=1e-3)
     opt3 = torch.optim.Adam(iter([inp_ctrl_pts, weights]), lr=3e-4)
     scheduler = torch.optim.lr_scheduler.MultiStepLR(opt2, milestones=[15, 50, 200], gamma=0.01)
     # scheduler = torch.optim.lr_scheduler.MultiStepLR(opt1, milestones=[500,1000,1500,2000,2500], gamma=0.1)
 
-    pbar = tqdm(range(2000))
+    pbar = tqdm(range(500))
     for i in pbar:
 
         target = torch.FloatTensor(np.array([X,Y,Z]).T).unsqueeze(0).cuda()
@@ -196,33 +224,46 @@ def main():
             loss.backward(retain_graph=True)
             return loss
 
-        if i > 30:
-            if i%3 == 0:
-                loss = opt1.step(closure)
-            else:
-                loss = opt3.step(closure)
-                # if i < 250 or  (i > 300 and i < 350) or (i > 400 and i < 450) or  (i > 500 and i < 550) or (i > 600 and i < 650) or (i > 700 and i < 750):
-                # if torch.isnan(knot_int_u.grad).any() or torch.isnan(knot_int_v.grad).any():
-                #     U_c = torch.cumsum(torch.clamp(torch.cat((knot_rep_p_0,knot_int_u,knot_rep_p_1), -1), min=0.0), dim=1)
-                #     U = (U_c - U_c[:,0].unsqueeze(-1)) / (U_c[:,-1].unsqueeze(-1) - U_c[:,0].unsqueeze(-1))
-                #     V_c = torch.cumsum(torch.clamp(torch.cat((knot_rep_q_0,knot_int_v,knot_rep_q_1), -1), min=0.0), dim=1)
+        ######################## Working version of previous code ##########################
+        # if i > 30:
+        #     # if i%3 == 0:
+        #     #     loss = opt1.step(closure)
+        #     # else:
+        #         # loss = opt3.step(closure)
+        #         # if i < 250 or  (i > 300 and i < 350) or (i > 400 and i < 450) or  (i > 500 and i < 550) or (i > 600 and i < 650) or (i > 700 and i < 750):
+        #         # if torch.isnan(knot_int_u.grad).any() or torch.isnan(knot_int_v.grad).any():
+        #         #     U_c = torch.cumsum(torch.clamp(torch.cat((knot_rep_p_0,knot_int_u,knot_rep_p_1), -1), min=0.0), dim=1)
+        #         #     U = (U_c - U_c[:,0].unsqueeze(-1)) / (U_c[:,-1].unsqueeze(-1) - U_c[:,0].unsqueeze(-1))
+        #         #     V_c = torch.cumsum(torch.clamp(torch.cat((knot_rep_q_0,knot_int_v,knot_rep_q_1), -1), min=0.0), dim=1)
 
-                #     V = (V_c - V_c[:,0].unsqueeze(-1)) / (V_c[:,-1].unsqueeze(-1) - V_c[:,0].unsqueeze(-1))
-                #     print(U)
-                #     print(V)
-                #     if torch.isnan(knot_int_u.grad).any():
-                #         knot_int_u.grad.data = torch.where(torch.isnan(knot_int_u.grad), knot_int_u.data*0, knot_int_u.grad.data)
-                #     if torch.isnan(knot_int_v.grad).any():
-                #         knot_int_v.grad.data = torch.where(torch.isnan(knot_int_v.grad), knot_int_v.data*0, knot_int_v.grad.data)
-                #     print(knot_int_v.grad.data)
-                opt2.step()
-        else:
+        #         #     V = (V_c - V_c[:,0].unsqueeze(-1)) / (V_c[:,-1].unsqueeze(-1) - V_c[:,0].unsqueeze(-1))
+        #         #     print(U)
+        #         #     print(V)
+        #         #     if torch.isnan(knot_int_u.grad).any():
+        #         #         knot_int_u.grad.data = torch.where(torch.isnan(knot_int_u.grad), knot_int_u.data*0, knot_int_u.grad.data)
+        #         #     if torch.isnan(knot_int_v.grad).any():
+        #         #         knot_int_v.grad.data = torch.where(torch.isnan(knot_int_v.grad), knot_int_v.data*0, knot_int_v.grad.data)
+        #         #     print(knot_int_v.grad.data)
+        #     loss = opt2.step(closure)
+        # else:
+        #     loss = opt1.step(closure)
+
+        # # if torch.isnan(loss):
+        # #     print(knot_int_u)
+        # #     print(knot_int_v)
+        # #     exit()
+
+        if (i%100) < 20:
             loss = opt1.step(closure)
+        else:
+            loss = opt2.step(closure)
 
-        # if torch.isnan(loss):
-        #     print(knot_int_u)
-        #     print(knot_int_v)
-        #     exit()
+
+        # if ((i+2)%1000) == 0:
+        #     if i > 5:
+        #         with torch.no_grad():
+        #             knot_int_u.data = knot_int_u.data + 1.0*torch.max(knot_int_u.data)
+        #             knot_int_v.data = knot_int_v.data + 1.0*torch.max(knot_int_u.data)
 
         out = layer((torch.cat((inp_ctrl_pts,weights), -1), torch.cat((knot_rep_p_0,knot_int_u,knot_rep_p_1), -1), torch.cat((knot_rep_q_0,knot_int_v,knot_rep_q_1), -1)))
         target = target.reshape(1,num_eval_pts_u,num_eval_pts_v,3)
@@ -237,7 +278,7 @@ def main():
             knot_int_u.data = torch.where(knot_int_u.data<0.0, knot_int_u.data*0+random.random()*0.1, knot_int_u.data)
             knot_int_v.data = torch.where(knot_int_v.data<0.0, knot_int_u.data*0+random.random()*0.1, knot_int_v.data)
 
-        if (i)%5000 == 0:
+        if (i+1)%500 == 0:
             fig = plt.figure(figsize=(15,4))
             ax1 = fig.add_subplot(131, projection='3d', adjustable='box', proj_type = 'ortho')
             target_mpl = target.cpu().numpy().squeeze()
@@ -285,9 +326,10 @@ def main():
             # ax.set_xlim(-1,4)
             # ax.set_ylim(-2,2)
             ax3 = fig.add_subplot(133, adjustable='box')
-            error_map = (((predicted - target_mpl)**2)/target_mpl).sum(-1)
-            # im3 = ax3.imshow(error_map, cmap='jet', interpolation='none', extent=[0,100,0,100], vmin=-1, vmax=1)
-            im3 = ax3.imshow(error_map, cmap='jet', interpolation='none', extent=[0,1,0,1], alpha=0.8, vmin=-1.0, vmax=1.0)
+            error_map = (((predicted - target_mpl)**2)).sum(-1)
+            # im3 = ax3.imshow(error_map.T, cmap='jet', origin='lower', interpolation='none', extent=[0,100,0,100], vmin=-1.0, vmax=1.0)
+
+            im3 = ax3.imshow(error_map.T, cmap='jet', origin='lower', interpolation='none', extent=[0,1,0,1], alpha=0.8, vmin=-1.0, vmax=1.0)
             # fig.colorbar(im3, shrink=0.4, aspect=5)
             fig.colorbar(im3, shrink=0.4, aspect=5)
             # fig.colorbar(im3, shrink=0.4, aspect=5, ticks=[-0.0001, 0, 0.0001])
@@ -315,7 +357,7 @@ def main():
             # fig.legend(lines, labels, ncol=2, loc='lower center', bbox_to_anchor= (0.33, 0.0),)
             plt.show()
 
-        if loss.item() < 1e-6:
+        if loss.item() < 1e-9:
             break
         pbar.set_description("Loss %s: %s" % (i+1, loss.item()))
 
