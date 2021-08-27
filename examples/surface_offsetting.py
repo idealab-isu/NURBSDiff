@@ -12,15 +12,12 @@ import sys
 sys.path.insert(0, 'D:/Reasearch Data and Codes/ray_inter_nurbs')
 import CPU_Eval as cpu
 
-
-
-
 def main():
     timing = []
-    eval_pts_size = 50
+    eval_pts_size = 100
     eval_pts_size_HD = 100
 
-    off_dist = 1.5
+    off_dist = 5
     cuda = False
 
     # Turbine Blade Surfaces
@@ -75,9 +72,9 @@ def main():
 
     temp_2 = cpu.compute_model_offset(ctrl_pts[Element_Array], CtrlPtsNormal, num_ctrl_pts1, num_ctrl_pts2, 3, knot_u, knot_v, off_layer=2, thickness=off_dist)
     weights = torch.ones(Element_Array.size, num_ctrl_pts1, num_ctrl_pts2, 1)
-    CtrlPtsOffset = torch.cat((torch.from_numpy(np.reshape(temp_2,[Element_Array.size, num_ctrl_pts1, num_ctrl_pts2,3])), weights), axis=-1)
+    CtrlPtsOffset = torch.cat((torch.from_numpy(np.reshape(temp_2[1],[Element_Array.size, num_ctrl_pts1, num_ctrl_pts2,3])), weights), axis=-1)
 
-    off_pts = off.compute_surf_offset(ctrl_pts[Element_Array], knot_u, knot_v, 3, 3, eval_pts_size, -off_dist)
+    off_pts = off.compute_surf_offset(ctrl_pts[Element_Array], knot_u, knot_v, 3, eval_pts_size, -off_dist)
     Max_size = off.Max_size(off_pts)
     target = torch.from_numpy(np.reshape(off_pts, [Element_Array.size, eval_pts_size, eval_pts_size, 3]))
 
@@ -108,24 +105,24 @@ def main():
         loss.backward()
         opt.step()
 
-        if (i+1) % 100000 == 0:
-            fig = plt.figure(figsize=(4, 4))
+        if (i) % 100000 == 0:
+            fig = plt.figure()
             ax = fig.add_subplot(111, projection='3d', adjustable='box', proj_type='ortho')
 
-            # target_mpl = np.reshape(target.cpu().numpy().squeeze(), [eval_pts_size * eval_pts_size, 3])
+            target_mpl = np.reshape(target.cpu().numpy().squeeze(), [eval_pts_size * eval_pts_size, 3])
             predicted = out.detach().cpu().numpy().squeeze()
             predctrlpts = inp_ctrl_pts.detach().cpu().numpy().squeeze()
             predctrlpts = predctrlpts[:, :, :3] / predctrlpts[:, :, 3:]
-            # surf1 = ax.scatter(target_mpl[:, 0], target_mpl[:, 1], target_mpl[:, 2], s=1.0, color='red', label='Target Offset surface')
+            surf1 = ax.scatter(target_mpl[:, 0], target_mpl[:, 1], target_mpl[:, 2], s=1.0, color='red', label='Target Offset surface')
             # surf1 = ax.plot_wireframe(ctrlpts[:, :, 0], ctrlpts[:, :, 1], ctrlpts[:, :, 2], linestyle='dashed',
             #                           color='orange', label='Target CP')
 
-            surf2 = ax.plot_surface(predicted[:, :, 0], predicted[:, :, 1], predicted[:, :, 2], color='green', label='Predicted Surface')
-            surf2 = ax.plot_wireframe(predctrlpts[:, :, 0], predctrlpts[:, :, 1], predctrlpts[:, :, 2],
-                                      linestyle='dashed', color='orange', label='Predicted CP')
+            # surf2 = ax.plot_surface(predicted[:, :, 0], predicted[:, :, 1], predicted[:, :, 2], color='green', label='Predicted Surface')
+            # surf2 = ax.plot_wireframe(predctrlpts[:, :, 0], predctrlpts[:, :, 1], predctrlpts[:, :, 2],
+            #                           linestyle='dashed', color='orange', label='Predicted CP')
 
-            surf3 = ax.plot_surface(BaseSurf_pts[:, :, 0], BaseSurf_pts[:, :, 1], BaseSurf_pts[:, :, 2], color='blue', alpha=0.5)
-            surf3 = ax.plot_wireframe(temp[0, :, :, 0], temp[0, :, :, 1], temp[0, :, :, 2], linestyle='dashed', color='pink', label='Predicted CP')
+            surf3 = ax.plot_surface(BaseSurf_pts[:, :, 0], BaseSurf_pts[:, :, 1], BaseSurf_pts[:, :, 2], color='blue', alpha=1)
+            # surf3 = ax.plot_wireframe(temp[0, :, :, 0], temp[0, :, :, 1], temp[0, :, :, 2], linestyle='dashed', color='pink', label='Predicted CP')
 
             # surf4 = ax.plot_surface(CtrlPtsOffsetSurf_Pts[:, :, 0], CtrlPtsOffsetSurf_Pts[:, :, 1], CtrlPtsOffsetSurf_Pts[:, :, 2], color='yellow')
 
@@ -133,22 +130,22 @@ def main():
             # ax.set_xlim(-1,4)
             # ax.set_ylim(-2,2)
 
-            ax.set_box_aspect([1, 1, 0.5])
-            ax.azim = 46
-            ax.dist = 10
-            ax.elev = 30
-            ax.set_xticks([])
-            ax.set_yticks([])
-            ax.set_zticks([])
-            ax.xaxis.set_pane_color((1.0, 1.0, 1.0, 0.0))
-            ax.yaxis.set_pane_color((1.0, 1.0, 1.0, 0.0))
-            ax.zaxis.set_pane_color((1.0, 1.0, 1.0, 0.0))
-            ax._axis3don = False
+            ax.set_box_aspect([1.2, 1.2, 0.35])
+            # ax.azim = 46
+            # ax.dist = 10
+            # ax.elev = 30
+            # ax.set_xticks([])
+            # ax.set_yticks([])
+            # ax.set_zticks([])
+            # ax.xaxis.set_pane_color((1.0, 1.0, 1.0, 0.0))
+            # ax.yaxis.set_pane_color((1.0, 1.0, 1.0, 0.0))
+            # ax.zaxis.set_pane_color((1.0, 1.0, 1.0, 0.0))
+            # ax._axis3don = False
             # ax.legend()
 
             # ax.set_aspect(1)
-            fig.subplots_adjust(hspace=0, wspace=0)
-            fig.tight_layout()
+            # fig.subplots_adjust(hspace=0, wspace=0)
+            # fig.tight_layout()
             plt.show()
 
         if loss.item() < 5e-4:

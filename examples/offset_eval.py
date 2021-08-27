@@ -1,4 +1,5 @@
 import numpy as np
+import math
 
 def Surf_pt(u, v, P, knot_u, knot_v, degree_u, degree_v):
     count = knot_v.shape[0] - degree_v - 1
@@ -165,41 +166,50 @@ def Basis_Deri(u, order, span, degree, knotV):
 def compute_normal_surface(CNTRL_PTS, knot_u, knot_v, grid_1, grid_2):
     count = grid_1.shape[1]
     PT = np.empty([grid_1.size, 3])
+    PT_Bent = np.empty([grid_1.size, 3])
     deri = np.empty([grid_1.size, 2, 2, 3])
     normals = np.empty([grid_1.size, 3])
+
+    PointMap = np.zeros([grid_1.size, 1], dtype=np.bool)
 
     for i in range(0, grid_1.shape[0]):
         for j in range(0, grid_1.shape[1]):
 
+            if grid_1[i][j] == 0.0 or grid_1[i][j] == 1.0 or grid_2[i][j] == 0.0 or grid_2[i][j] == 1.0:
+                PointMap[i * count + j] = 1
+
             # PT[i * count + j] = Surf_pt(grid_1[i][j], grid_2[i][j], CNTRL_PTS, knot_u, knot_v, degree_u=3, degree_v=3)
             PT[i * count + j] = Surf_pt(grid_1[i][j], grid_2[i][j], CNTRL_PTS, knot_u, knot_v, degree_u=3, degree_v=3)
+
+            # PT_Bent[i * count + j] = BendItBackward(PT[i * count + j], 2)
+
             deri[i * count + j] = Deri_Surf(grid_1[i][j], grid_2[i][j], 1, CNTRL_PTS, knot_u, knot_v, degree_u=3, degree_v=3)
             temp = np.cross(deri[i * count + j][0][1], deri[i * count + j][1][0])
             normals[i * count + j] = temp / np.linalg.norm(temp)
 
             pass
 
-    return PT, normals
+    return PT, normals, PointMap #, PT_Bent
     pass
 
 
-def Map_Surf_Points(Surf_Pts, Normals):
+def Map_Surf_Points(Surf_Pts, Normals, PointMap):
 
-    EdgeSurfPtsMap = np.zeros([Surf_Pts.shape[0], Surf_Pts.shape[1], 3], dtype=np.uint32)
+    EdgeSurfPtsMap = np.zeros([Surf_Pts.shape[0], Surf_Pts.shape[1], 12], dtype=np.uint32)
     for i in range(EdgeSurfPtsMap.shape[0]):
         for k in range(Surf_Pts.shape[1]):
-            count = 0
-            EdgeSurfPtsMap[i][k][0] = count
-            for j in range(EdgeSurfPtsMap.shape[0]):
-                if i != j:
-                    for l in range(Surf_Pts.shape[1]):
-                        if np.linalg.norm(Surf_Pts[i][k] - Surf_Pts[j][l]) == 0.0:
-                            count += 1
-                            EdgeSurfPtsMap[i][k][0] = count
-                            EdgeSurfPtsMap[i][k][(2 * EdgeSurfPtsMap[i][k][0]) - 1] = j
-                            EdgeSurfPtsMap[i][k][(2 * EdgeSurfPtsMap[i][k][0])] = l
-
-
+            if PointMap[i][k]:
+                count = 0
+                EdgeSurfPtsMap[i][k][0] = count
+                for j in range(EdgeSurfPtsMap.shape[0]):
+                    if i != j:
+                        for l in range(Surf_Pts.shape[1]):
+                            if PointMap[j][l]:
+                                if np.linalg.norm(Surf_Pts[i][k] - Surf_Pts[j][l]) == 0.0:
+                                    count += 1
+                                    EdgeSurfPtsMap[i][k][0] = count
+                                    EdgeSurfPtsMap[i][k][(2 * EdgeSurfPtsMap[i][k][0]) - 1] = j
+                                    EdgeSurfPtsMap[i][k][(2 * EdgeSurfPtsMap[i][k][0])] = l
 
     for i in range(EdgeSurfPtsMap.shape[0]):
         for j in range(EdgeSurfPtsMap.shape[1]):
@@ -259,21 +269,50 @@ def Max_size(SurfPts):
     return GlobboxMax - GlobboxMin
     pass
 
-def compute_surf_offset(CNTRL_PTS, knot_u, knot_v, degree_u, degree_v, eval_pts_size, thickness):
-    delta_u = eval_pts_size
-    delta_v = eval_pts_size
+
+def BendItBackward(PT, angle):
+    rad_angle = angle * 3.142 / 180
+    center = np.zeros([3])
+    center[1] = 2.0
+    center[0] = PT[0]
+
+    if PT[1] == center[1]:
+        return PT
+
+    radius = math.sqrt(math.pow(PT[0] - center[0], 2) +
+                       math.pow(PT[1] - center[1], 2) +
+                       math.pow(PT[2] - center[2], 2))
+
+    angle = math.atan2(PT[2] - center[2], PT[1] - center[1]) + rad_angle
+
+    deflect_pt = np.zeros([3])
+
+    deflect_pt[0] = center[0]
+    deflect_pt[1] = center[1] + radius * math.cos(angle)
+    deflect_pt[2] = center[2] + radius * math.sin(angle)
+
+    return deflect_pt
+    pass
+
+def compute_surf_offset(CNTRL_PTS, knot_u, knot_v, degree_u, eval_pts_size, thickness):
+    delta_u = eval_pts_size * 1
+    delta_v = eval_pts_size * 1
     grid_1, grid_2 = np.meshgrid(np.linspace(0.0, 1.0, delta_u), np.linspace(0.0, 1.0, delta_v))
-    OFF_PTS = np.empty([CNTRL_PTS.shape[0], grid_1.shape[0] * grid_1.shape[1], 3], dtype=np.float32)
-    SURF_PTS = np.empty([CNTRL_PTS.shape[0], grid_1.shape[0] * grid_1.shape[1], 3], dtype=np.float32)
-    NORMALS = np.empty([CNTRL_PTS.shape[0], grid_1.shape[0] * grid_1.shape[1], 3], dtype=np.float32)
+    OFF_PTS = np.empty([len(CNTRL_PTS), grid_1.shape[0] * grid_1.shape[1], 3], dtype=np.float32)
+    SURF_PTS = np.empty([len(CNTRL_PTS), grid_1.shape[0] * grid_1.shape[1], 3], dtype=np.float32)
+    NORMALS = np.empty([len(CNTRL_PTS), grid_1.shape[0] * grid_1.shape[1], 3], dtype=np.float32)
+    PointMap = np.zeros([len(CNTRL_PTS), grid_1.shape[0] * grid_1.shape[1], 1], dtype=np.bool)
+    Deflect_SURF_PTS = np.empty([len(CNTRL_PTS), grid_1.shape[0] * grid_1.shape[1], 3], dtype=np.float32)
 
-    for i in range(0, CNTRL_PTS.shape[0]):
-        SURF_PTS[i], NORMALS[i] = compute_normal_surface(CNTRL_PTS[i], knot_u, knot_v, grid_1, grid_2)
+    for i in range(0, len(CNTRL_PTS)):
+        # SURF_PTS[i], NORMALS[i], Deflect_SURF_PTS[i] = compute_normal_surface(CNTRL_PTS[i], knot_u[i], knot_v[i], grid_1, grid_2)
+        SURF_PTS[i], NORMALS[i], PointMap[i] = compute_normal_surface(CNTRL_PTS[i], knot_u, knot_v, grid_1, grid_2)
 
-    if CNTRL_PTS.shape[0] > 1:
-        NORMALS = Map_Surf_Points(SURF_PTS, NORMALS)
+    if len(CNTRL_PTS) > 1:
+        NORMALS = Map_Surf_Points(SURF_PTS, NORMALS, PointMap)
 
     OFF_PTS = SURF_PTS + (thickness * NORMALS)
 
     return OFF_PTS
+    # return SURF_PTS, Deflect_SURF_PTS
 
