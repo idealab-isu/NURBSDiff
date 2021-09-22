@@ -166,7 +166,7 @@ def Basis_Deri(u, order, span, degree, knotV):
 def compute_normal_surface(CNTRL_PTS, knot_u, knot_v, grid_1, grid_2):
     count = grid_1.shape[1]
     PT = np.empty([grid_1.size, 3])
-    PT_Bent = np.empty([grid_1.size, 3])
+    # PT_Bent = np.empty([grid_1.size, 3])
     deri = np.empty([grid_1.size, 2, 2, 3])
     normals = np.empty([grid_1.size, 3])
 
@@ -306,7 +306,7 @@ def compute_surf_offset(CNTRL_PTS, knot_u, knot_v, degree_u, eval_pts_size, thic
 
     for i in range(0, len(CNTRL_PTS)):
         # SURF_PTS[i], NORMALS[i], Deflect_SURF_PTS[i] = compute_normal_surface(CNTRL_PTS[i], knot_u[i], knot_v[i], grid_1, grid_2)
-        SURF_PTS[i], NORMALS[i], PointMap[i] = compute_normal_surface(CNTRL_PTS[i], knot_u, knot_v, grid_1, grid_2)
+        SURF_PTS[i], NORMALS[i], PointMap[i] = compute_normal_surface(CNTRL_PTS[i], knot_u[i], knot_v[i], grid_1, grid_2)
 
     if len(CNTRL_PTS) > 1:
         NORMALS = Map_Surf_Points(SURF_PTS, NORMALS, PointMap)
