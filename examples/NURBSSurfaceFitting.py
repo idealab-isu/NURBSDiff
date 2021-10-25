@@ -52,8 +52,8 @@ def main():
         knot_v = np.array([-3.14159, -3.14159, -3.14159, -3.14159, -2.61799, -2.0944, -1.0472, -0.523599,
                               6.66134e-016, 0.523599, 1.0472, 2.0944, 2.61799, 3.14159, 3.14159, 3.14159, 3.14159])
         knot_v = (knot_v - knot_v.min())/(knot_v.max()-knot_v.min())
-        ctrlpts = np.array(exchange.import_txt("duck1.ctrlpts", separator=" "))
-        weights = np.array(read_weights("duck1.weights")).reshape(num_ctrl_pts1 * num_ctrl_pts2,1)
+        ctrlpts = np.array(exchange.import_txt("Ducky/duck1.ctrlpts", separator=" "))
+        weights = np.array(read_weights("Ducky/duck1.weights")).reshape(num_ctrl_pts1 * num_ctrl_pts2,1)
         target_ctrl_pts = torch.from_numpy(np.concatenate([ctrlpts,weights],axis=-1)).view(1,num_ctrl_pts1,num_ctrl_pts2,4)
         target_eval_layer = SurfEval(num_ctrl_pts1, num_ctrl_pts2, knot_u=knot_u, knot_v=knot_v, dimension=3, p=3, q=3, out_dim_u=num_eval_pts_u, out_dim_v=num_eval_pts_v)
         target = target_eval_layer(target_ctrl_pts).float()
@@ -78,31 +78,40 @@ def main():
         inp_ctrl_pts = torch.nn.Parameter(torch.rand((1,num_ctrl_pts1,num_ctrl_pts2,4), requires_grad=True).float())
 
     layer = SurfEval(num_ctrl_pts1, num_ctrl_pts2, knot_u=knot_u, knot_v=knot_v, dimension=3, p=3, q=3, out_dim_u=num_eval_pts_u, out_dim_v=num_eval_pts_v, dvc='cpp')
-    opt = torch.optim.Adam(iter([inp_ctrl_pts]), lr=0.01)
-    pbar = tqdm(range(20000))
+    opt = torch.optim.LBFGS(iter([inp_ctrl_pts]), lr=1.0, max_iter=5)
+    pbar = tqdm(range(100))
 
     for i in pbar:
         torch.cuda.empty_cache() 
-        opt.zero_grad()
+        target = target.reshape(1,num_eval_pts_u*num_eval_pts_v,3)
+        def closure():        
+            opt.zero_grad()
+            weights = torch.ones(1,num_ctrl_pts1, num_ctrl_pts2, 1)
+            out = layer(torch.cat((inp_ctrl_pts, weights), axis=-1))
+            # out = layer(inp_ctrl_pts)
+            # length1 = ((out[:,0:-1,:,:]-out[:,1:,:,:])**2).sum(-1).squeeze()
+            # length2 = ((out[:,:,0:-1,:]-out[:,:,1:,:])**2).sum(-1).squeeze()
+            # surf_area = torch.matmul(length1,length2)
+            out = out.reshape(1,num_eval_pts_u*num_eval_pts_v,3)
+            loss = ((target-out)**2).mean()
+            # loss, _ = chamfer_distance(target,out)
+            # if int(i/500)%2 == 1:
+            #     loss += (0.001/(i+1))*surf_area.sum()
+            # print(out.size())
+            loss.backward(retain_graph=True)
+            return loss
+        loss = opt.step(closure)
+        # with torch.no_grad():
+        #     inp_ctrl_pts[:,0,:,:] = (inp_ctrl_pts[:,0,:,:]).mean(1)
+        #     inp_ctrl_pts[:,-1,:,:] = (inp_ctrl_pts[:,-1,:,:]).mean(1)
+        #     inp_ctrl_pts[:,:,0,:] = inp_ctrl_pts[:,:,-1,:] = (inp_ctrl_pts[:,:,0,:] + inp_ctrl_pts[:,:,-1,:])/2
+
         weights = torch.ones(1,num_ctrl_pts1, num_ctrl_pts2, 1)
         out = layer(torch.cat((inp_ctrl_pts, weights), axis=-1))
         # out = layer(inp_ctrl_pts)
         # length1 = ((out[:,0:-1,:,:]-out[:,1:,:,:])**2).sum(-1).squeeze()
         # length2 = ((out[:,:,0:-1,:]-out[:,:,1:,:])**2).sum(-1).squeeze()
         # surf_area = torch.matmul(length1,length2)
-        target = target.reshape(1,num_eval_pts_u*num_eval_pts_v,3)
-        out = out.reshape(1,num_eval_pts_u*num_eval_pts_v,3)
-        loss = ((target-out)**2).mean()
-        # loss, _ = chamfer_distance(target,out)
-        # if int(i/500)%2 == 1:
-        #     loss += (0.001/(i+1))*surf_area.sum()
-        # print(out.size())
-        loss.backward()
-        opt.step()
-        # with torch.no_grad():
-        #     inp_ctrl_pts[:,0,:,:] = (inp_ctrl_pts[:,0,:,:]).mean(1)
-        #     inp_ctrl_pts[:,-1,:,:] = (inp_ctrl_pts[:,-1,:,:]).mean(1)
-        #     inp_ctrl_pts[:,:,0,:] = inp_ctrl_pts[:,:,-1,:] = (inp_ctrl_pts[:,:,0,:] + inp_ctrl_pts[:,:,-1,:])/2
 
         target = target.reshape(1,num_eval_pts_u,num_eval_pts_v,3)
         out = out.reshape(1,num_eval_pts_u,num_eval_pts_v,3)
@@ -154,12 +163,12 @@ def main():
             ax3 = fig.add_subplot(133, adjustable='box')
             error_map = (((predicted - target_mpl)**2)/target_mpl).sum(-1)
             # im3 = ax.imshow(error_map, cmap='jet', interpolation='none', extent=[0,128,0,128])
-            im3 = ax3.imshow(error_map, cmap='jet', interpolation='none', extent=[0,128,0,128], vmin=-0.001, vmax=0.001)
+            im3 = ax3.imshow(error_map, cmap='jet', interpolation='none', extent=[0,1.0,0,1.0], vmin=-0.001, vmax=0.001)
             # fig.colorbar(im3, shrink=0.4, aspect=5)
             fig.colorbar(im3, shrink=0.4, aspect=5, ticks=[-0.001, 0, 0.001])
             ax3.set_xlabel('$u$')
             ax3.set_ylabel('$v$')
-            x_positions = np.arange(0,128,20) # pixel count at label position
+            x_positions = np.around(np.linspace(0,1.0,6), 2) # pixel count at label position
             plt.xticks(x_positions, x_positions)
             plt.yticks(x_positions, x_positions)
             ax3.set_aspect(1)
@@ -172,9 +181,6 @@ def main():
 
             fig.legend(lines, labels, ncol=2, loc='lower center', bbox_to_anchor= (0.33, 0.0),)
             plt.show()
-
-        if loss.item() < 1e-4:
-            break
         pbar.set_description("Loss %s: %s" % (i+1, loss.item()))
 
     fig = plt.figure(figsize=(15, 4))
@@ -227,12 +233,12 @@ def main():
     ax3 = fig.add_subplot(133, adjustable='box')
     error_map = (((predicted - target_mpl) ** 2) / target_mpl).sum(-1)
     # im3 = ax.imshow(error_map, cmap='jet', interpolation='none', extent=[0,128,0,128])
-    im3 = ax3.imshow(error_map, cmap='jet', interpolation='none', extent=[0, 128, 0, 128], vmin=-0.001, vmax=0.001)
+    im3 = ax3.imshow(error_map, cmap='jet', interpolation='none', extent=[0, 1.0, 0, 1.0], vmin=-0.001, vmax=0.001)
     # fig.colorbar(im3, shrink=0.4, aspect=5)
     fig.colorbar(im3, shrink=0.4, aspect=5, ticks=[-0.001, 0, 0.001])
     ax3.set_xlabel('$u$')
     ax3.set_ylabel('$v$')
-    x_positions = np.arange(0, 128, 20)  # pixel count at label position
+    x_positions = np.around(np.linspace(0,1.0,6), 2)  # pixel count at label position
     plt.xticks(x_positions, x_positions)
     plt.yticks(x_positions, x_positions)
     ax3.set_aspect(1)
@@ -244,21 +250,22 @@ def main():
     # finally we invoke the legend (that you probably would like to customize...)
 
     fig.legend(lines, labels, ncol=2, loc='lower center', bbox_to_anchor=(0.33, 0.0), )
-    plt.show()
+    plt.savefig('ducky_fitting.pdf')
+    # plt.show()
 
-    layer_2 = SurfEval(num_ctrl_pts1, num_ctrl_pts2, knot_u=knot_u, knot_v=knot_v, dimension=3, p=3, q=3,
-                       out_dim_u=512,
-                       out_dim_v=512, dvc='cpp')
-    weights = torch.ones(1, num_ctrl_pts1, num_ctrl_pts2, 1)
-    out_2 = layer_2(torch.cat((inp_ctrl_pts, weights), axis=-1))
+    # layer_2 = SurfEval(num_ctrl_pts1, num_ctrl_pts2, knot_u=knot_u, knot_v=knot_v, dimension=3, p=3, q=3,
+    #                    out_dim_u=512,
+    #                    out_dim_v=512, dvc='cpp')
+    # weights = torch.ones(1, num_ctrl_pts1, num_ctrl_pts2, 1)
+    # out_2 = layer_2(torch.cat((inp_ctrl_pts, weights), axis=-1))
 
-    target_2 = target.view(1, num_eval_pts_u * num_eval_pts_v, 3)
-    out_2 = out_2.view(1, 512 * 512, 3)
+    # target_2 = target.view(1, num_eval_pts_u * num_eval_pts_v, 3)
+    # out_2 = out_2.view(1, 512 * 512, 3)
 
-    loss, _ = chamfer_distance(target_2, out_2)
+    # loss, _ = chamfer_distance(target_2, out_2)
 
-    print('Max size is  ==  ', Max_size)
-    print('Chamber loss is   ===  ',  loss * 10000)
+    # print('Max size is  ==  ', Max_size)
+    # print('Chamber loss is   ===  ',  loss * 10000)
 
 if __name__ == '__main__':
     main()
