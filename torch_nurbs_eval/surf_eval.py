@@ -62,7 +62,8 @@ class SurfEval(torch.nn.Module):
             out = SurfEvalFunc.apply(input, self.u, self.v, self.U, self.V, self.m, self.n, self.p, self.q, self._dimension, self.dvc, self.out_dim_u, self.out_dim_v)
             return out
         elif self.method == 'tc':
-
+            mod_input = input[:, :, :, :self._dimension] * input[:, :, :, self._dimension].unsqueeze(-1)
+            input = torch.cat((mod_input, input[:, :, :, self._dimension].unsqueeze(-1)), axis=-1)
             surfaces = (self.Nu_uv[:,0].unsqueeze(0).unsqueeze(-1).unsqueeze(-1)*\
                 input[:,(self.uspan_uv - self.p).type(torch.LongTensor), :,:])[:,:, (self.vspan_uv-self.q).type(torch.LongTensor),:]*\
                 self.Nv_uv[:,0].unsqueeze(0).unsqueeze(0).unsqueeze(-1)
