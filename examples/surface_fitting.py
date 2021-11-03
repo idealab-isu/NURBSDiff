@@ -3,8 +3,8 @@ import numpy as np
 torch.manual_seed(120)
 import random
 from tqdm import tqdm
-from torch_nurbs_eval.nurbs_eval import SurfEval
-from torch_nurbs_eval.utils import gen_knot_vector
+from NURBSDiff.nurbs_eval import SurfEval
+from NURBSDiff.utils import gen_knot_vector
 import offset_eval as off
 import matplotlib
 # font = {'family': 'serif',

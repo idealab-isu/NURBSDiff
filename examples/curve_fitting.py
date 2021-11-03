@@ -3,7 +3,7 @@ import torch
 from tqdm import tqdm
 import matplotlib.pyplot as plt
 from pytorch3d.loss import chamfer_distance
-from torch_nurbs_eval.curve_eval import CurveEval
+from NURBSDiff.curve_eval import CurveEval
 torch.manual_seed(0)
 from skimage import io
 import scipy.io

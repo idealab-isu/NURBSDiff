@@ -28,7 +28,7 @@ from train_open_spline_utils.src.loss import (
 )
 from train_open_spline_utils.src.model_nips import DGCNNControlPoints
 from train_open_spline_utils.src.utils import rescale_input_outputs
-from torch_nurbs_eval.surf_eval import SurfEval
+from NURBSDiff.surf_eval import SurfEval
 #from pytorch3d.loss import chamfer_distance
 
 def nurbs_reconstruction_loss_one_sided(nu, nv, output, points, config, side=1):

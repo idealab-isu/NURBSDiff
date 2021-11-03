@@ -10,7 +10,7 @@ import CPU_Eval as cpu
 from tqdm import tqdm
 from pytorch3d.loss import chamfer_distance
 import offset_eval as off
-from torch_nurbs_eval.surf_eval import SurfEval
+from NURBSDiff.surf_eval import SurfEval
 import matplotlib.pyplot as plt
 
 evalPtsSize = 101

@@ -16,7 +16,7 @@ from train_open_spline_utils.src.fitting_utils import sample_points_from_control
 from train_open_spline_utils.src.fitting_utils import up_sample_points_torch_in_range
 from train_open_spline_utils.src.loss import control_points_permute_reg_loss
 from train_open_spline_utils.src.loss import laplacian_loss
-from torch_nurbs_eval.surf_eval import SurfEval
+from NURBSDiff.surf_eval import SurfEval
 from train_open_spline_utils.src.loss import (
     uniform_knot_bspline,
     spline_reconstruction_loss,

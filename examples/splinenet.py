@@ -13,7 +13,7 @@ from scipy.special import comb
 from geomdl import BSpline
 from geomdl.visualization import VisMPL
 from pytorch3d.loss import chamfer_distance
-from torch_nurbs_eval.surf_eval import SurfEval
+from NURBSDiff.surf_eval import SurfEval
 import matplotlib.pyplot as plt
 torch.manual_seed(0)
 
