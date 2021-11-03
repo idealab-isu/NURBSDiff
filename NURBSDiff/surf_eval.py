@@ -5,6 +5,8 @@ from torch import nn
 from torch.autograd import Function
 from torch.autograd import Variable
 from NURBSDiff.surf_eval_cpp import pre_compute_basis as cpp_pre_compute_basis, forward as cpp_forward, backward as cpp_backward
+CUDA_AVAILABLE=True
+DELTA = 1e-8
 try:
     from NURBSDiff.surf_eval_cuda import pre_compute_basis, forward, backward
 except:
@@ -33,8 +35,8 @@ class SurfEval(torch.nn.Module):
             self.V = torch.Tensor(knot_v)
         else:
             self.V = torch.Tensor(np.array(gen_knot_vector(self.q, self.n)))
-        self.u = torch.linspace(0.0, 1.0, steps=out_dim_u, dtype=torch.float32)
-        self.v = torch.linspace(0.0, 1.0, steps=out_dim_v, dtype=torch.float32)
+        self.u = torch.linspace(0.0 + DELTA, 1.0 - DELTA, steps=out_dim_u, dtype=torch.float32)
+        self.v = torch.linspace(0.0 + DELTA, 1.0 - DELTA, steps=out_dim_v, dtype=torch.float32)
         self.method = method
         self.dvc = dvc
         if self.dvc == 'cuda':
