@@ -3,8 +3,8 @@ import numpy as np
 from torch import nn
 from torch.autograd import Function
 from torch.autograd import Variable
-from torch_nurbs_eval.curve_eval_cpp import forward as cpp_forward, backward as cpp_backward, pre_compute_basis as cpp_pre_compute_basis
-from torch_nurbs_eval.curve_eval_cuda import pre_compute_basis, forward, backward
+from NURBSDiff.curve_eval_cpp import forward as cpp_forward, backward as cpp_backward, pre_compute_basis as cpp_pre_compute_basis
+from NURBSDiff.curve_eval_cuda import pre_compute_basis, forward, backward
 from .utils import gen_knot_vector
 torch.manual_seed(120)
 

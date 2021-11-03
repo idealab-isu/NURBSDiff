@@ -1,24 +1,24 @@
 import os
 from setuptools import setup, find_packages
-# from torch.utils.cpp_extension import BuildExtension, CppExtension,CUDAExtension
+from torch.utils.cpp_extension import BuildExtension, CppExtension,CUDAExtension
 
 setup(
     name='NURBSDiff',
-#     ext_modules=[
-#         CppExtension(name='torch_nurbs_eval.curve_eval_cpp',
-#             sources=['torch_nurbs_eval/csrc/curve_eval.cpp','torch_nurbs_eval/csrc/utils.cpp'],
-#             extra_include_paths=['torch_nurbs_eval/csrc/utils.h','torch_nurbs_eval/csrc/curve_eval.h']),
-#         CppExtension(name='torch_nurbs_eval.surf_eval_cpp',
-#             sources=['torch_nurbs_eval/csrc/surf_eval.cpp','torch_nurbs_eval/csrc/utils.cpp'],
-#             extra_include_paths=['torch_nurbs_eval/csrc/utils.h','torch_nurbs_eval/csrc/surf_eval.h']),
-#         CUDAExtension(name='torch_nurbs_eval.curve_eval_cuda',
-#             sources=['torch_nurbs_eval/csrc/curve_eval_cuda.cpp',
-#             'torch_nurbs_eval/csrc/curve_eval_cuda_kernel.cu']),
-#         CUDAExtension(name='torch_nurbs_eval.surf_eval_cuda',
-#             sources=['torch_nurbs_eval/csrc/surf_eval_cuda.cpp',
-#             'torch_nurbs_eval/csrc/surf_eval_cuda_kernel.cu']),
-#     ],
-#     cmdclass={
-#         'build_ext': BuildExtension
-#     },
+    ext_modules=[
+        CppExtension(name='NURBSDiff.curve_eval_cpp',
+            sources=['NURBSDiff/csrc/curve_eval.cpp','NURBSDiff/csrc/utils.cpp'],
+            extra_include_paths=['NURBSDiff/csrc/utils.h','NURBSDiff/csrc/curve_eval.h']),
+        CppExtension(name='NURBSDiff.surf_eval_cpp',
+            sources=['NURBSDiff/csrc/surf_eval.cpp','NURBSDiff/csrc/utils.cpp'],
+            extra_include_paths=['NURBSDiff/csrc/utils.h','NURBSDiff/csrc/surf_eval.h']),
+        CUDAExtension(name='NURBSDiff.curve_eval_cuda',
+            sources=['NURBSDiff/csrc/curve_eval_cuda.cpp',
+            'NURBSDiff/csrc/curve_eval_cuda_kernel.cu']),
+        CUDAExtension(name='NURBSDiff.surf_eval_cuda',
+            sources=['NURBSDiff/csrc/surf_eval_cuda.cpp',
+            'NURBSDiff/csrc/surf_eval_cuda_kernel.cu']),
+    ],
+    cmdclass={
+        'build_ext': BuildExtension
+    },
     packages=find_packages(),)

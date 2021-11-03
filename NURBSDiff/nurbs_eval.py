@@ -7,8 +7,8 @@ from torch.autograd import Variable
 
 from .utils import gen_knot_vector
 
-from torch_nurbs_eval.surf_eval_cpp import pre_compute_basis as cpp_pre_compute_basis, forward as cpp_forward, backward as cpp_backward
-from torch_nurbs_eval.surf_eval_cuda import pre_compute_basis, forward, backward
+from NURBSDiff.surf_eval_cpp import pre_compute_basis as cpp_pre_compute_basis, forward as cpp_forward, backward as cpp_backward
+from NURBSDiff.surf_eval_cuda import pre_compute_basis, forward, backward
 
 class SurfEval(torch.nn.Module):
     """
