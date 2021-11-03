@@ -1,4 +1,4 @@
-# TorchNURBSEval
+# NURBSDiff
 This repo contains code for fitting curves and surfaces to any input point cloud.
 
 # Requirements and Install dependencies
@@ -26,7 +26,7 @@ sed -i.bak -e 's/return \*(this->value)/return \*((type\*)this->value)/g' /c/too
 or open x64 Native Tools Command Prompt for VS2017 and run the following command from the TorchNURBSEval folder.
 `python setup.py develop`
 
-# Usage of TorchNURBSEval 
+# Usage of NURBSDiff 
 
 * Curve Evaluation (curve_eval.py)
   1. The evaluation kernels for curve_eval.py are written under torch_nurbs_eval/csrc/curve_eval.cpp
