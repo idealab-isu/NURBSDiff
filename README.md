@@ -2,17 +2,20 @@
 This repo contains code for fitting curves and surfaces to any input point cloud.
 
 # Requirements and Install dependencies
-All requirements updated in the environment.yml in the parent folder of the git repository.
 
-This is the command to install all the dependencies...
-* `conda env create -f environment.yml`
-* `conda activate nurbseval`
-* If not already installed via the environment file install Pytorch3D by:
-* `pip install "git+https://github.com/facebookresearch/pytorch3d.git" `
-* If not already installed via the environment file install NURBS-python by:
-* `pip install geomdl`
+## Dependencies
+1. Pytorch: Installation command can be generated from [here](https://pytorch.org/get-started/locally/).
+2. Pytorch 3D :
+		* For CPU only install `pip install pytorch3d` should do
+		* For GPU support, we would need to install `pytorch3d` using the following process
+				```
+				TBD
+				pip install "git+https://github.com/facebookresearch/pytorch3d.git"
+				```
 
-# Installation of the package
+* Geomdl: `pip install geomdl`
+
+<!-- # Installation of the package
 The following commands need to be modified to compile the code successfully, with pytorch code as well.
 
 ```
@@ -25,7 +28,8 @@ sed -i.bak -e 's/return \*(this->value)/return \*((type\*)this->value)/g' /c/too
 `call "%VS2017INSTALLDIR%\VC\Auxiliary\Build\vcvarsall.bat" x64 10.0.17763.0 && set DISTUTILS_USE_SDK=1 && set PY_VCRUNTIME_REDIST=No thanks && set MSSdk=1 && python setup.py develop`
 or open x64 Native Tools Command Prompt for VS2017 and run the following command from the TorchNURBSEval folder.
 `python setup.py develop`
-
+ -->
+ 
 # Usage of NURBSDiff 
 
 * Curve Evaluation (curve_eval.py)
