@@ -1,9 +1,9 @@
-from setuptools import setup, find_packages
-from torch.utils.cpp_extension import BuildExtension, CppExtension,CUDAExtension
 import os
+from setuptools import setup, find_packages
+# from torch.utils.cpp_extension import BuildExtension, CppExtension,CUDAExtension
 
 setup(
-    name='torch_nurbs_eval',
+    name='NURBSDiff',
 #     ext_modules=[
 #         CppExtension(name='torch_nurbs_eval.curve_eval_cpp',
 #             sources=['torch_nurbs_eval/csrc/curve_eval.cpp','torch_nurbs_eval/csrc/utils.cpp'],
