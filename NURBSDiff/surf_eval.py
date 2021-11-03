@@ -5,7 +5,10 @@ from torch import nn
 from torch.autograd import Function
 from torch.autograd import Variable
 from NURBSDiff.surf_eval_cpp import pre_compute_basis as cpp_pre_compute_basis, forward as cpp_forward, backward as cpp_backward
-from NURBSDiff.surf_eval_cuda import pre_compute_basis, forward, backward
+try:
+    from NURBSDiff.surf_eval_cuda import pre_compute_basis, forward, backward
+except:
+    CUDA_AVAILABLE=False
 from .utils import gen_knot_vector
 
 class SurfEval(torch.nn.Module):
@@ -16,6 +19,8 @@ class SurfEval(torch.nn.Module):
     """
     def __init__(self, m, n, dimension=3, p=3, q=3, knot_u=None, knot_v=None, out_dim_u=32, out_dim_v=128, method='tc', dvc='cpp'):
         super(SurfEval, self).__init__()
+        if not CUDA_AVAILABLE:
+            dvc = 'cpp'
         self.m = m
         self.n = n
         self._dimension = dimension

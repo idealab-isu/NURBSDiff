@@ -48,7 +48,7 @@ def chamfer_distance_one_side(pred, gt, side=1):
 def main():
     uEvalPtSize = 32
     vEvalPtSize = 64
-    device = 'cuda'
+    device = 'cpp'
     dataFileName = 'data.41.txt'
     smeshInFileName = 'smesh.41.in.dat'
     smeshOutFileName = "smesh.41.out.dat"
