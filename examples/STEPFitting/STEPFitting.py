@@ -48,9 +48,9 @@ def chamfer_distance_one_side(pred, gt, side=1):
 
 def main():
     uEvalPtSize = 32
-    vEvalPtSize = 64
+    vEvalPtSize = 32
     device = 'cuda'
-    dataFileName = 'data.1.txt'
+    dataFileName = 'c5dataReg.txt'
     jsonInFileName = 'AMSurface.json'
     jsonOutFileName = "AMSurface.out.json"
     with open(jsonInFileName, 'r') as f:
@@ -84,6 +84,8 @@ def main():
     base_out = layer(torch.cat((inpCtrlPts.unsqueeze(0), inpWeight), axis=-1))
 
     BaseAreaSurf = base_out.detach().cpu().numpy().squeeze()
+    EvalPoints = np.reshape(BaseAreaSurf,(uEvalPtSize*vEvalPtSize,3))
+    np.savetxt("Eval.txt", EvalPoints, delimiter="\t")
 
     base_length_u = ((BaseAreaSurf[:-1, :-1, :] - BaseAreaSurf[1:, :-1, :]) ** 2).sum(-1).squeeze()
     base_length_v = ((BaseAreaSurf[:-1, :-1, :] - BaseAreaSurf[:-1, 1:, :]) ** 2).sum(-1).squeeze()
@@ -106,8 +108,8 @@ def main():
     print(base_surf_curv11.detach().cpu().numpy().squeeze(), base_surf_curv12.detach().cpu().numpy().squeeze())
     print(base_surf_curv21.detach().cpu().numpy().squeeze(), base_surf_curv22.detach().cpu().numpy().squeeze())
 
-    opt = torch.optim.Adam(iter([inpCtrlPts]), lr=1e-2)
-    # opt = torch.optim.LBFGS(iter([inpCtrlPts]), lr=0.5, max_iter=5)
+    opt = torch.optim.Adam(iter([inpCtrlPts]), lr=1e-1)
+    #opt = torch.optim.LBFGS(iter([inpCtrlPts]), lr=0.2, max_iter=5)
     scheduler = torch.optim.lr_scheduler.MultiStepLR(opt, milestones=[50,100,150,200,250,300], gamma=0.1)
     pbar = tqdm(range(10000))
     for i in pbar:
@@ -139,13 +141,13 @@ def main():
                 lossVal = chamfer_distance_one_side(out.view(1, uEvalPtSize * vEvalPtSize, 3), target.view(1, mumPoints[0], 3))
 
             # loss, _ = chamfer_distance(target.view(1, 360, 3), out.view(1, evalPtSize * evalPtSize, 3))
-            if (i < 100):
-                lossVal += (1) * torch.abs(torch.sum(length_u1)-base_length_u1)
+            # if (i < 100):
+            #     lossVal += (1) * torch.abs(torch.sum(length_u1)-base_length_u1)
 
             # Local area change
             # lossVal += (1) * torch.sum(torch.abs(surf_areas - surf_areas_base_torch))
             # Total area change
-            lossVal += (1) * torch.abs(surf_areas.sum() - base_area)
+            # lossVal += (1) * torch.abs(surf_areas.sum() - base_area)
 
             # Minimize maximum curvature
             lossVal += (10) * torch.abs(surf_max_curv)
@@ -180,7 +182,7 @@ def main():
         #     inpCtrlPts.data[j][1] = inpCtrlPts.data[j][0] + avgDir
         #     inpCtrlPts.data[j][-2] = inpCtrlPts.data[j][0] - avgDir
 
-        if i % 100 == 0:
+        if i % 1000 == 0:
             fig = plt.figure(figsize=(4, 4))
             ax = fig.add_subplot(111, projection='3d', adjustable='box', proj_type='ortho')
 
@@ -190,8 +192,8 @@ def main():
 
             surf1 = ax.scatter(target_cpu[:, 0], target_cpu[:, 1], target_cpu[:, 2], s=3.0, color='red')
             surf2 = ax.plot_surface(predicted[:, :, 0], predicted[:, :, 1], predicted[:, :, 2], color='green', alpha=0.5)
-            # surf3 = ax.plot_wireframe(predCtrlPts[:, :, 0], predCtrlPts[:, :, 1], predCtrlPts[:, :, 2], linewidth=1, linestyle='dashed', color='orange')
-            # ax.plot(CtrlPtsNoW[0, :, 0], CtrlPtsNoW[0, :, 1], CtrlPtsNoW[0, :, 2], linewidth=3, linestyle='solid', color='green')
+            surf3 = ax.plot_wireframe(predCtrlPts[:, :, 0], predCtrlPts[:, :, 1], predCtrlPts[:, :, 2], linewidth=1, linestyle='dashed', color='orange')
+            #ax.plot(CtrlPtsNoW[0, :, 0], CtrlPtsNoW[0, :, 1], CtrlPtsNoW[0, :, 2], linewidth=3, linestyle='solid', color='green')
 
             ax.azim = -90
             ax.dist = 6.5
