@@ -111,7 +111,7 @@ def main():
     opt = torch.optim.Adam(iter([inpCtrlPts]), lr=1e-1)
     #opt = torch.optim.LBFGS(iter([inpCtrlPts]), lr=0.2, max_iter=5)
     scheduler = torch.optim.lr_scheduler.MultiStepLR(opt, milestones=[50,100,150,200,250,300], gamma=0.1)
-    pbar = tqdm(range(10000))
+    pbar = tqdm(range(5000))
     for i in pbar:
         
         def closure():
@@ -182,7 +182,7 @@ def main():
         #     inpCtrlPts.data[j][1] = inpCtrlPts.data[j][0] + avgDir
         #     inpCtrlPts.data[j][-2] = inpCtrlPts.data[j][0] - avgDir
 
-        if i % 1000 == 0:
+        if i % 5000 == 0:
             fig = plt.figure(figsize=(4, 4))
             ax = fig.add_subplot(111, projection='3d', adjustable='box', proj_type='ortho')
 
@@ -192,7 +192,7 @@ def main():
 
             surf1 = ax.scatter(target_cpu[:, 0], target_cpu[:, 1], target_cpu[:, 2], s=3.0, color='red')
             surf2 = ax.plot_surface(predicted[:, :, 0], predicted[:, :, 1], predicted[:, :, 2], color='green', alpha=0.5)
-            surf3 = ax.plot_wireframe(predCtrlPts[:, :, 0], predCtrlPts[:, :, 1], predCtrlPts[:, :, 2], linewidth=1, linestyle='dashed', color='orange')
+            surf3 = ax.plot_wireframe(predCtrlPts[:, :, 0], predCtrlPts[:, :, 1], predCtrlPts[:, :, 2], linewidth=1, color='orange')
             #ax.plot(CtrlPtsNoW[0, :, 0], CtrlPtsNoW[0, :, 1], CtrlPtsNoW[0, :, 2], linewidth=3, linestyle='solid', color='green')
 
             ax.azim = -90
@@ -217,11 +217,13 @@ def main():
         pass
 
 
-    predCtrlPts = torch.cat((inpCtrlPts.unsqueeze(0), weight), axis=-1).detach().cpu().numpy().squeeze()
-    surface.ctrlptsw = (np.reshape(predCtrlPts,(CtrlPtsCountUV[0]*CtrlPtsCountUV[1], 4)).tolist())
+    # predCtrlPts = torch.cat((inpCtrlPts.unsqueeze(0), weight), axis=-1).detach().cpu().numpy().squeeze()
+    # predctrlptsw = (np.reshape(predCtrlPts,(CtrlPtsCountUV[0]*CtrlPtsCountUV[1], 4)).tolist())
+    predCtrlPoints = inpCtrlPts.detach().cpu().numpy().squeeze().tolist()
+    surface['shape']['data']['control_points']['points'] = predCtrlPoints
 
-    with open(os.path.join(prefix + "_" + str(face_id), jsonOutFileName), "w") as f:
-        json.dump(self.config, f, indent=4)
+    with open(jsonOutFileName, "w") as f:
+        json.dump(surface, f, indent=4)
     # surface.evaluate()
     # vis_config = VisMPL.VisConfig(legend=False, axes=False, ctrlpts=False)
     # vis_comp = VisMPL.VisSurface(vis_config)
