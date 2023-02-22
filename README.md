@@ -7,6 +7,7 @@ This repo contains code for fitting curves and surfaces to any input point cloud
 1. Pytorch: Installation command can be generated from [here](https://pytorch.org/get-started/locally/).
 2. Pytorch 3D :
 		* For CPU only install `pip install pytorch3d` should do
+		* For MACOS running on Apple Silicon `MACOSX_DEPLOYMENT_TARGET=10.14 CC=clang CXX=clang++ pip install "git+https://github.com/facebookresearch/pytorch3d.git"`
 		* For GPU support, we would need to install `pytorch3d` using the following process
 				```
 				TBD
