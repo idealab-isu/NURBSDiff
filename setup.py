@@ -23,7 +23,8 @@ try:
             'build_ext': BuildExtension
         },
         packages=find_packages(),)
-except:
+except Exception as e:
+    print(e)
     print('installation of NURBSDiff with GPU wasnt successful, installing CPU version')
     setup(
         name='NURBSDiff',
