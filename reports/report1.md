@@ -44,19 +44,19 @@ knot_u = [0.16666667 0.33333365
 ```
 And then it extends its size to num_eval_pts_u. The starting element is 3, which is the degree on u mapping. The repeated times is (knot_u[current] - knot_u[current - 1]) by num_eval_pts_u.
 
-For instance, the second different element is degree_u + 1 = 4, and it repeated 512 * (0.33333365 - 0.16666667)  $\approx$ 85.
+For instance, the second element(not 3) is degree_u + 1 = 4, and it repeated 512 * (0.33333365 - 0.16666667)  $\approx$ 85.
 
-In summary, the knot_u of target surface follows the original distribution so the plotting ploted by matplotlib is simliart to which plotted by geomdl. Since the parameter diff is just scaling. Knot_v follows the same rule.
+In summary, the knot_u of target surface follows the original distribution so the surface ploted by matplotlib is similiar to which plotted by geomdl. Since the parameter diff is just scaling. Knot_v follows the same rule.
 ## How does NURBS-DIFF deal with knot_u, knot_v mapping of predicted surface?
 For training, [knot_int_u](../examples/test/DuckyNURBSSurfaceFitting.py#L168) is initlized as:
 ```python
 knot_int_u= torch.nn.Parameter(torch.ones(num_ctrl_pts1+p+1-2*p-1).unsqueeze(0).cuda(), requires_grad=True)
 ```
-As we can see, knot_int_u is initlized to a uniform torch vector. Afterwards, it's passed to this [optimizer](../examples/test/DuckyNURBSSurfaceFitting.py#L176) for training.
+As we can see, knot_int_u is initlized to a torch vector with all 1. Afterwards, it's passed to this [optimizer](../examples/test/DuckyNURBSSurfaceFitting.py#L176) for training.
 ```python
 opt2 = torch.optim.SGD(iter([knot_int_u, knot_int_v]), lr=1e-3)
 ```
-But it seems there exists some issues in [their training python file](../NURBSDiff/nurbs_eval.py), the final output knot_int_u is still an uniform vector. After transforming it to Counter. It becomes
+But it seems there exists some issues in [their training python file](../NURBSDiff/nurbs_eval.py), the final output knot_int_u is still an vector with uniform distribtuion. After transforming it to Counter. It becomes
 ```python
 knot_u_counter = Counter({3: 47, 4: 47, 5: 47, 6: 47, 7: 47, 8: 46, 9: 46, 10: 46, 11: 46, 12: 46, 13: 46})
 ```
@@ -64,7 +64,7 @@ So currently the uv span mapping loses its original distribution and turns to be
 ## Result of Plotting target and predicted surface with different color regarding u and v
 I used three basic colors for plotting. Pure red means u=v=0. Pure green means u=v=0.5, while pure blue means u=v=1(assuming knot_u, knot_v are normalized)
 
-Since I got [knot_u as well as knot_v](../examples/test/DuckyNURBSSurfaceFitting.py#L222-L223) from previous steps, I am capable to plot the surface blocks by blocks. Each block is the collection of the elements with same value. More deatails can be found in [plot_subfigure](../examples/test/DuckyNURBSSurfaceFitting.py#L=61). I also plotted the surface just after the first epoch. Besides, I plotted the diff surface by using (target surface - predicted surface).
+Since I got [knot_u as well as knot_v](../examples/test/DuckyNURBSSurfaceFitting.py#L222-L223) from previous steps, I am capable to plot the surface blocks by blocks. Each block is the collection of the elements with same value. More deatails can be found in [plot_subfigure](../examples/test/DuckyNURBSSurfaceFitting.py#L61). I also plotted the surface just after the first epoch. Besides, I plotted the diff surface by using (target surface - predicted surface).
 
 Here's the result:
 
