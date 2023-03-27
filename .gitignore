@@ -133,7 +133,7 @@ examples/*
 
 *.h5
 
-# *.pdf
+*.pdf
 *.stl
 *.png
 *.csv

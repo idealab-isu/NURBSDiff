@@ -46,7 +46,7 @@ And then it extends its size to num_eval_pts_u. The starting element is 3, which
 
 For instance, the second element(not 3) is degree_u + 1 = 4, and it repeated 512 * (0.33333365 - 0.16666667)  $\approx$ 85.
 
-In summary, the knot_u of target surface follows the original distribution so the surface ploted by matplotlib is similiar to which plotted by geomdl. Since the parameter diff is just scaling. Knot_v follows the same rule.
+In summary, the knot_u of target surface follows the original distribution so the surface plotted by matplotlib is similiar to which plotted by geomdl. Since the parameter diff is just scaling. Knot_v follows the same rule.
 ## How does NURBS-DIFF deal with knot_u, knot_v mapping of predicted surface?
 For training, [knot_int_u](../examples/test/DuckyNURBSSurfaceFitting.py#L168) is initlized as:
 ```python
