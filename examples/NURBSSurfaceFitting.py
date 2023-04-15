@@ -10,7 +10,7 @@ from matplotlib import cm
 from geomdl import exchange
 from geomdl.visualization import VisMPL
 from geomdl import compatibility
-import offset_eval as off
+# import offset_eval as off
 
 SMALL_SIZE = 12
 MEDIUM_SIZE = 16
@@ -59,7 +59,7 @@ def main():
         target = target_eval_layer(target_ctrl_pts).float()
 
         PTS = target.detach().numpy().squeeze()
-        Max_size = off.Max_size(np.reshape(PTS, [1, num_eval_pts_u * num_eval_pts_v, 3]))
+        # Max_size = off.Max_size(np.reshape(PTS, [1, num_eval_pts_u * num_eval_pts_v, 3]))
         inp_ctrl_pts = torch.nn.Parameter(torch.rand((1,num_ctrl_pts1,num_ctrl_pts2,3), requires_grad=True).float())
 
     elif case=='Shark':

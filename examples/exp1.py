@@ -135,7 +135,7 @@ get_val_data = iter(
     )
 )
 
-nurbs_layer = SurfEval(20,20, dimension=3, p=3, q=3, out_dim_u=40, out_dim_v=40, method='tc', dvc='cuda')
+nurbs_layer = SurfEval(20, 20, dimension=3, p=3, q=3, out_dim_u=40, out_dim_v=40, method='tc', dvc='cuda')
 nurbs_layer.cuda()
 
 optimizer = torch.optim.Adam(control_decoder.parameters(),lr=config.lr)

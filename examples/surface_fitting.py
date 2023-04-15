@@ -5,7 +5,7 @@ import random
 from tqdm import tqdm
 from NURBSDiff.nurbs_eval import SurfEval
 from NURBSDiff.utils import gen_knot_vector
-import offset_eval as off
+# import offset_eval as off
 import matplotlib
 # font = {'family': 'serif',
 #         'weight': 'normal',
@@ -188,7 +188,7 @@ def main():
     inp_ctrl_pts = torch.nn.Parameter(inp_ctrl_pts, requires_grad=True)
 
     Pts = np.reshape(np.array([X, Y, Z]), [1, num_eval_pts_u * num_eval_pts_v, 3])
-    Max_Size = off.Max_size(Pts)
+    # Max_Size = off.Max_size(Pts)
 
     layer = SurfEval(num_ctrl_pts_u, num_ctrl_pts_v, dimension=3, p=p, q=q, out_dim_u=num_eval_pts_u, out_dim_v=num_eval_pts_v, method='tc', dvc='cuda').cuda()
     weights = torch.nn.Parameter(torch.ones(1,num_ctrl_pts_u, num_ctrl_pts_v, 1).cuda(), requires_grad=True)

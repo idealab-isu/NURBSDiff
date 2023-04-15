@@ -29,7 +29,7 @@ import trimesh
 
 mesh = exchange.import_obj("../Ducky/duck1.obj")[0]
 points = mesh
-print(points['trangles'])
+# print(points['trangles'])
 # from pymesh import meshio
 SMALL_SIZE = 12
 MEDIUM_SIZE = 16
@@ -166,15 +166,15 @@ def main():
 
     p = 3
     q = 3
-    knot_int_u = torch.nn.Parameter(torch.ones(num_ctrl_pts1+p+1-2*p-1).unsqueeze(0).cuda(), requires_grad=True)
+    knot_int_u = torch.nn.Parameter(torch.ones(num_ctrl_pts1+p+1-2*p-1, requires_grad=True).unsqueeze(0).cuda())
     # torch.Size([1, 128, 128, 4])
     # Parameter containing:
     # tensor([[1., 1., 1., 1., 1., 1., 1., 1., 1., 1., 1.]], device='cuda:0',
     #     requires_grad=True)
     # knot_int_u.data[0,3] = 0.0
-    knot_int_v = torch.nn.Parameter(torch.ones(num_ctrl_pts2+q+1-2*q-1).unsqueeze(0).cuda(), requires_grad=True)
+    knot_int_v = torch.nn.Parameter(torch.ones(num_ctrl_pts2+q+1-2*q-1, requires_grad=True).unsqueeze(0).cuda())
     # knot_int_v.data[0,3] = 0.0
-    weights = torch.nn.Parameter(torch.ones(1,num_ctrl_pts1, num_ctrl_pts2, 1).cuda(), requires_grad=True)
+    weights = torch.nn.Parameter(torch.ones((1,num_ctrl_pts1, num_ctrl_pts2, 1), requires_grad=True).cuda())
     # print(target.shape)
     layer = SurfEval(num_ctrl_pts1, num_ctrl_pts2, dimension=3, p=3, q=3, out_dim_u=num_eval_pts_u, out_dim_v=num_eval_pts_v, method='tc', dvc='cuda').cuda()
     opt1 = torch.optim.LBFGS(iter([inp_ctrl_pts, weights]), lr=0.5, max_iter=3)

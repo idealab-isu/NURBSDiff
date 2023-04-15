@@ -175,6 +175,7 @@ class BasisFunc(torch.autograd.Function):
     @staticmethod
     def backward(ctx, grad_output):
         U = ctx.saved_tensors[0]
+        print(U.shape)
         uspan_uv = ctx.uspan_uv
         p = ctx.p
         Nu_uv = ctx.Nu_uv

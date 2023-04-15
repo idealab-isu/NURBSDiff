@@ -62,6 +62,35 @@ def generate_gradient(start_color, end_color, steps):
         gradient.append(hex_color)
     return gradient
 
+def plot_subfigure_no_uv(surface_points, ax, color, label):
+    ax.plot_wireframe(surface_points[:, :, 0],
+                                surface_points[:, :, 1],
+                                surface_points[:, :, 2],
+                                    color=color, label=label[0])
+    
+    ax.azim = 45
+    ax.dist = 6.5
+    ax.elev = 30
+    ax.set_xticks([])
+    ax.set_yticks([])
+    ax.set_zticks([])
+    ax.xaxis.set_pane_color((1.0, 1.0, 1.0, 0.0))
+    ax.yaxis.set_pane_color((1.0, 1.0, 1.0, 0.0))
+    ax.zaxis.set_pane_color((1.0, 1.0, 1.0, 0.0))
+    ax._axis3don = False
+
+def adjust_plot(ax):
+    ax.azim = 45
+    ax.dist = 6.5
+    ax.elev = 30
+    ax.set_xticks([])
+    ax.set_yticks([])
+    ax.set_zticks([])
+    ax.xaxis.set_pane_color((1.0, 1.0, 1.0, 0.0))
+    ax.yaxis.set_pane_color((1.0, 1.0, 1.0, 0.0))
+    ax.zaxis.set_pane_color((1.0, 1.0, 1.0, 0.0))
+    ax._axis3don = False
+
 def plot_subfigure(num_ctrl_pts1, num_ctrl_pts2, uspan_uv, vspan_uv, surface_points, ax, colors, ctrlpts, color, label, uvlabel=False):
     u_index = 0
     for i in range(num_ctrl_pts1 - 3):
@@ -193,44 +222,51 @@ def laplacian_loss_unsupervised(output, dist_type="l2"):
 
 
 def main():
-    timing = time.time()
-    num_ctrl_pts1 = 14
-    num_ctrl_pts2 = 13
-    num_eval_pts_u = 64
-    num_eval_pts_v = 64
-    knot_u = utilities.generate_knot_vector(3, 14)
-    knot_v = utilities.generate_knot_vector(3, 13)
-    inp_ctrl_pts = torch.nn.Parameter(torch.rand(1,num_ctrl_pts1, num_ctrl_pts2, 3))
-    # knot_u = np.array([-1.5708, -1.5708, -1.5708, -1.5708, -1.0472, -0.523599, 0, 0.523599, 0.808217,
-    #                       1.04015, 1.0472, 1.24824, 1.29714, 1.46148, 1.5708, 1.5708, 1.5708, 1.5708])
-    # knot_u = (knot_u - knot_u.min())/(knot_u.max()-knot_u.min())
-    # knot_v = np.array([-3.14159, -3.14159, -3.14159, -3.14159, -2.61799, -2.0944, -1.0472, -0.523599,
-    #                       6.66134e-016, 0.523599, 1.0472, 2.0944, 2.61799, 3.14159, 3.14159, 3.14159, 3.14159])
-    # knot_v = (knot_v - knot_v.min())/(knot_v.max()-knot_v.min())
-    ctrlpts = np.array(exchange.import_txt("../Ducky/duck1.ctrlpts", separator=" "))
-    weights = np.array(read_weights("../Ducky/duck1.weights")).reshape(num_ctrl_pts1 * num_ctrl_pts2,1)
-    target_ctrl_pts = torch.from_numpy(np.concatenate([ctrlpts,weights],axis=-1)).view(1,num_ctrl_pts1,num_ctrl_pts2,4)
-    target_eval_layer = SurfEvalBS(num_ctrl_pts1, num_ctrl_pts2, knot_u=knot_u, knot_v=knot_v, dimension=3, p=3, q=3, out_dim_u=num_eval_pts_u, out_dim_v=num_eval_pts_v)
-    target = target_eval_layer(target_ctrl_pts).float().cuda()
+    timing = []
+    # load point cloud
+    with open('../../meshes/luigi.off', 'r') as f:
+        lines = f.readlines()
 
+        # skip the first line
+        lines = lines[2:102]
+
+        # extract vertex positions
+        vertex_positions = []
+        for line in lines:
+            values = line.split()
+            x, y, z = float(values[0]), float(values[1]), float(values[2])
+            vertex_positions.append([x, y, z])
+    print(len(vertex_positions))
+    print(vertex_positions[1])
+    num_ctrl_pts1 = 32
+    num_ctrl_pts2 = 32
+    num_eval_pts_u = 10
+    num_eval_pts_v = 10
+
+    target = torch.tensor(vertex_positions).reshape(1, num_eval_pts_u, num_eval_pts_v, 3).float().cuda()
+
+    # print(target.shape)
     # PTS = target.detach().numpy().squeeze()
     # Max_size = off.Max_size(np.reshape(PTS, [1, num_eval_pts_u * num_eval_pts_v, 3]))
     inp_ctrl_pts = torch.nn.Parameter(torch.rand((1,num_ctrl_pts1,num_ctrl_pts2,3), requires_grad=True).float().cuda())
 
-    p = 3
-    q = 3
+    p = 4
+    q = 4
     knot_int_u = torch.nn.Parameter(torch.ones(num_ctrl_pts1+p+1-2*p-1).unsqueeze(0).cuda(), requires_grad=True)
     knot_int_v = torch.nn.Parameter(torch.ones(num_ctrl_pts2+q+1-2*q-1).unsqueeze(0).cuda(), requires_grad=True)
 
     weights = torch.nn.Parameter(torch.ones((1,num_ctrl_pts1,num_ctrl_pts2,1), requires_grad=True).float().cuda())
 
     # print(target.shape)
-    layer = SurfEval(num_ctrl_pts1, num_ctrl_pts2, dimension=3, p=3, q=3, out_dim_u=num_eval_pts_u, out_dim_v=num_eval_pts_v, method='tc', dvc='cuda').cuda()
+    layer = SurfEval(num_ctrl_pts1, num_ctrl_pts2, dimension=3, p=4, q=4, out_dim_u=num_eval_pts_u, out_dim_v=num_eval_pts_v, method='tc', dvc='cuda').cuda()
     opt1 = torch.optim.Adam(iter([inp_ctrl_pts, weights]), lr=0.5) 
-    opt2 = torch.optim.Adam(iter([knot_int_u, knot_int_v]), lr=1e-3)
-    pbar = tqdm(range(1000))
+    opt2 = torch.optim.Adam(iter([knot_int_u, knot_int_v]), lr=1e-2)
+    lr_schedule1 = torch.optim.lr_scheduler.ReduceLROnPlateau(opt1, patience=3)
+    lr_schedule2 = torch.optim.lr_scheduler.ReduceLROnPlateau(opt2, patience=3)
+    pbar = tqdm(range(500))
     colors = generate_gradient('#ff0000', '#00ff00', (num_ctrl_pts1 - 3) * (num_ctrl_pts2 - 3) // 2) + generate_gradient('#00ff00', '#0000ff', (num_ctrl_pts1 - 3) * (num_ctrl_pts2 - 3) // 2)
     fig = plt.figure(figsize=(15, 9))
+    time1 = time.time()
     for i in pbar:
         # torch.cuda.empty_cache()
         knot_rep_p_0 = torch.zeros(1,p+1).cuda()
@@ -246,23 +282,26 @@ def main():
             out = layer((torch.cat((inp_ctrl_pts,weights), -1), torch.cat((knot_rep_p_0,knot_int_u,knot_rep_p_1), -1), torch.cat((knot_rep_q_0,knot_int_v,knot_rep_q_1), -1)))
 
             # loss = ((target-out)**2).mean()
-            loss = 0.05 * laplacian_loss_unsupervised(out)
+            # loss = 0.1 * laplacian_loss_unsupervised(out)
+            loss = 0
             # loss = 0
             out = out.reshape(1, num_eval_pts_u*num_eval_pts_v, 3)
             tgt = target.reshape(1, num_eval_pts_u*num_eval_pts_v, 3)
-            loss += chamfer_distance(out, tgt) #+ 10 * directed_hausdorff(out, tgt)
+            loss += ((out - tgt) ** 2).mean() #+ 10 * directed_hausdorff(out, tgt)
+            # loss += chamfer_distance(out, tgt)
             
 
             loss.backward(retain_graph=True)
             return loss
 
-        if (i%300) < 150:
+        if (i%300) < 270:
             loss = opt1.step(closure)
             # print(weights.grad)
-           
+            lr_schedule1.step(loss)
         else:
             loss = opt2.step(closure)        
             # print(weights.grad)
+            lr_schedule2.step(loss)
 
         out = layer((torch.cat((inp_ctrl_pts,weights), -1), torch.cat((knot_rep_p_0,knot_int_u,knot_rep_p_1), -1), torch.cat((knot_rep_q_0,knot_int_v,knot_rep_q_1), -1)))
         target = target.reshape(1,num_eval_pts_u,num_eval_pts_v,3)
@@ -273,39 +312,58 @@ def main():
         pbar.set_description("Loss %s: %s" % (i+1, loss.item()))
 
 
-
+    print((time.time() - time1)/ 100) 
     train_uspan_uv, train_vspan_uv = layer.getuvspan()
-    target_uspan_uv, target_vspan_uv = target_eval_layer.getuvsapn()
+    # target_uspan_uv, target_vspan_uv = layer.getuvsapn()
     # print(inp_ctrl_pts)
 
     target_mpl = target.cpu().numpy().squeeze()
+    target_mpl = target_mpl.reshape(-1, 3)
+    # print(out.shape)
     predicted = out.detach().cpu().numpy().squeeze()
-    ctrlpts = ctrlpts.reshape(num_ctrl_pts1, num_ctrl_pts2, 3)
+    predicted = predicted.reshape(-1, 3)
+    # ctrlpts = ctrlpts.reshape(num_ctrl_pts1, num_ctrl_pts2, 3)
     predctrlpts = inp_ctrl_pts.detach().cpu().numpy().squeeze()
-
+    # predictedknotu = knot_int_u.detach().cpu().numpy().squeeze().tolist()
+    # predictedknotu = [0., 0., 0., 0.] + predictedknotu + [1., 1., 1.]
+    # predictedknotv = knot_int_v.detach().cpu().numpy().squeeze().tolist()
+    # predictedknotv = [0., 0., 0., 0.] + predictedknotv + [1., 1., 1.]
+    # predictedWeight = weights.detach().cpu().numpy().squeeze(0)
+    # print(predictedknotu)
+    # target_ctrl_pts = torch.from_numpy(np.concatenate([predctrlpts,predictedWeight],axis=-1)).view(1,num_ctrl_pts1,num_ctrl_pts2,4)
+    # target_eval_layer = SurfEvalBS(num_ctrl_pts1, num_ctrl_pts2, knot_u=predictedknotu, knot_v=predictedknotv, dimension=3, p=3, q=3, out_dim_u=128, out_dim_v=128)
+    # predicted_extended = target_eval_layer(target_ctrl_pts).float().numpy().squeeze(0)
+    # predicted_extended = predicted_extended.reshape(-1, 3)
+    # print(predicted_extended)
+    # print(np.shape(predicted_extended))
     ax1 = fig.add_subplot(231, projection='3d', adjustable='box', proj_type='ortho')
     
 
-    
-    plot_subfigure(num_ctrl_pts1, num_ctrl_pts2, target_uspan_uv, target_vspan_uv, target_mpl, ax1, colors, ctrlpts, color='lightgreen', label=['Target Control Points'], uvlabel=True)
-    ax2 = fig.add_subplot(233, projection='3d', adjustable='box')
-    plot_subfigure(num_ctrl_pts1, num_ctrl_pts2, train_uspan_uv, train_vspan_uv, predicted, ax2, colors, predctrlpts, color='violet', label=['Predicted Control Points'])
+    ax1.scatter(target_mpl[:, 0], target_mpl[:, 1], target_mpl[:, 2], color='red', label=['GT Surface'])
+    adjust_plot(ax1)
 
-    ax3 = fig.add_subplot(236, adjustable='box')
-    error_map = (((predicted - target_mpl) ** 2) / target_mpl).sum(-1)
+    ax2 = fig.add_subplot(232, projection='3d', adjustable='box')
+    ax2.scatter(predicted[:, 0], predicted[:, 1], predicted[:, 2], color='lightgreen', label=['predicted Surface'])
+    adjust_plot(ax2)
 
-    im3 = ax3.imshow(error_map, cmap='jet', interpolation='none', extent=[0, 128, 0, 128], vmin=-0.001, vmax=0.001)
-    # fig.colorbar(im3, shrink=0.4, aspect=5)
-    fig.colorbar(im3, shrink=0.4, aspect=5, ticks=[-0.001, 0, 0.001])
-    ax3.set_xlabel('$u$')
-    ax3.set_ylabel('$v$')
-    x_positions = np.arange(0, 128, 20)  # pixel count at label position
-    plt.xticks(x_positions, x_positions)
-    plt.yticks(x_positions, x_positions)
-    ax3.set_aspect(1)
+    # ax4 = fig.add_subplot(233, adjustable='box')
+    # ax4.plot(predicted_extended, color='lightyellow', label='Predicted Surface-extended')
 
-    ax5 = fig.add_subplot(235, projection='3d', adjustable='box')
-    plot_diff_subfigure(target_mpl - predicted, ax5)
+    # ax3 = fig.add_subplot(236, adjustable='box')
+    # error_map = (((predicted - target_mpl) ** 2) / target_mpl).sum(-1)
+
+    # im3 = ax3.imshow(error_map, cmap='jet', interpolation='none', extent=[0, 128, 0, 128], vmin=-0.001, vmax=0.001)
+    # # fig.colorbar(im3, shrink=0.4, aspect=5)
+    # fig.colorbar(im3, shrink=0.4, aspect=5, ticks=[-0.001, 0, 0.001])
+    # ax3.set_xlabel('$u$')
+    # ax3.set_ylabel('$v$')
+    # x_positions = np.arange(0, 128, 20)  # pixel count at label position
+    # plt.xticks(x_positions, x_positions)
+    # plt.yticks(x_positions, x_positions)
+    # ax3.set_aspect(1)
+
+    # ax5 = fig.add_subplot(235, projection='3d', adjustable='box')
+    # plot_diff_subfigure(target_mpl - predicted, ax5)
 
     fig.subplots_adjust(hspace=0, wspace=0)
     fig.tight_layout()
@@ -316,7 +374,7 @@ def main():
 
     fig.legend(lines, labels, ncol=2, loc='lower left', bbox_to_anchor=(0.33, 0.0), )
     # plt.savefig('ducky_reparameterization_no_ctrpts.pdf')
-    plt.savefig('ducky_reparameterization_uniform_knots.pdf')
+    plt.savefig('luigi_32.pdf')
     plt.show()
 
 if __name__ == '__main__':

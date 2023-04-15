@@ -9,7 +9,7 @@ from NURBSDiff.surf_eval import SurfEval as SurfEvalBS
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
 from matplotlib import cm
-from geomdl import exchange
+from geomdl import exchange, utilities
 from geomdl.visualization import VisMPL
 from geomdl import compatibility
 # import offset_eval as off
@@ -131,10 +131,12 @@ def main():
     num_ctrl_pts2 = 6
     num_eval_pts_u = 512
     num_eval_pts_v = 512
-    knot_u = np.array([0.0, 0.0, 0.0, 0.0, 1.0, 2.0, 3.0, 3.0, 3.0, 3.0])
-    knot_v = np.array([0.0, 0.0, 0.0, 0.0, 1.0, 2.0, 3.0, 3.0, 3.0, 3.0])
-    knot_u = (knot_u - knot_u.min())/(knot_u.max()-knot_u.min())
-    knot_v = (knot_v - knot_v.min())/(knot_v.max()-knot_v.min())
+    # knot_u = np.array([0.0, 0.0, 0.0, 0.0, 1.0, 2.0, 3.0, 3.0, 3.0, 3.0])
+    # knot_v = np.array([0.0, 0.0, 0.0, 0.0, 1.0, 2.0, 3.0, 3.0, 3.0, 3.0])
+    # knot_u = (knot_u - knot_u.min())/(knot_u.max()-knot_u.min())
+    # knot_v = (knot_v - knot_v.min())/(knot_v.max()-knot_v.min())
+    knot_u = utilities.generate_knot_vector(3, 6)
+    knot_v = utilities.generate_knot_vector(3, 6)
     ctrlpts = np.array(exchange.import_txt("surface.cpt", separator=" "))
     weights = np.array(read_weights("surface.weights")).reshape(num_ctrl_pts1 * num_ctrl_pts2,1)
     target_ctrl_pts = torch.from_numpy(np.concatenate([ctrlpts,weights],axis=-1)).view(1,num_ctrl_pts1,num_ctrl_pts2,4)
@@ -230,7 +232,7 @@ def main():
     # finally we invoke the legend (that you probably would like to customize...)
 
     fig.legend(lines, labels, ncol=2, loc='lower left', bbox_to_anchor=(0.33, 0.0), )
-    plt.savefig('surface_reparameterization.pdf')
+    plt.savefig('surface_reparameterization_uniform_knots.pdf')
     plt.show()
 
 if __name__ == '__main__':
