@@ -257,10 +257,10 @@ def main():
     timing = []
     # load point cloud
     max_coord = min_coord = 0
-    resolution = 50
-    ctr_pts = 30
+    resolution = 100
+    ctr_pts = 20
     p = q = 4
-    with open('meshes/sphere_' + str(resolution * resolution) + '.off', 'r') as f:
+    with open('meshes/luigi_' + str(resolution * resolution) + '.off', 'r') as f:
         lines = f.readlines()
 
         # skip the first line
@@ -304,7 +304,7 @@ def main():
     opt2 = torch.optim.Adam(iter([knot_int_u, knot_int_v]), lr=1e-2)
     lr_schedule1 = torch.optim.lr_scheduler.ReduceLROnPlateau(opt1, patience=3)
     lr_schedule2 = torch.optim.lr_scheduler.ReduceLROnPlateau(opt2, patience=3)
-    pbar = tqdm(range(10000))
+    pbar = tqdm(range(3000))
     colors = generate_gradient('#ff0000', '#00ff00', (num_ctrl_pts1 - 3) * (num_ctrl_pts2 - 3) // 2) + generate_gradient('#00ff00', '#0000ff', (num_ctrl_pts1 - 3) * (num_ctrl_pts2 - 3) // 2)
     fig = plt.figure(figsize=(15, 9))
     time1 = time.time()
@@ -322,11 +322,8 @@ def main():
             # out = layer(inp_ctrl_pts)
             out = layer((torch.cat((inp_ctrl_pts,weights), -1), torch.cat((knot_rep_p_0,knot_int_u,knot_rep_p_1), -1), torch.cat((knot_rep_q_0,knot_int_v,knot_rep_q_1), -1)))
 
-            # loss = ((target-out)**2).mean()
-            # loss = 0.1 * laplacian_loss_unsupervised(out)
             loss = 0
-            # loss = 0
-            loss += 0.1 * laplacian_loss_unsupervised(out)
+            # loss += 0.1 * laplacian_loss_unsupervised(out)
             out = out.reshape(1, num_eval_pts_u*num_eval_pts_v, 3)
             tgt = target.reshape(1, num_eval_pts_u*num_eval_pts_v, 3)
             # loss += 10 * hausdorff_distance(out, tgt)
@@ -435,7 +432,7 @@ def main():
 
     ax2 = fig.add_subplot(142, projection='3d', adjustable='box', proj_type='ortho')
     ax2.set_box_aspect([1,1,1])
-    ax2.plot_wireframe(predictedctrlpts[:, :,0], predictedctrlpts[:, :, 1], predictedctrlpts[:, :, 2], color='blue', label=['Predicted Control Points'])
+    # ax2.plot_wireframe(predictedctrlpts[:, :,0], predictedctrlpts[:, :, 1], predictedctrlpts[:, :, 2], color='blue', label=['Predicted Control Points'])
     ax2.scatter(predicted[:, :, 0], predicted[:, :,1], predicted[:, :,2], color='lightgreen', label=['Predicted Surface'])
     adjust_plot(ax2)
 
@@ -494,7 +491,7 @@ def main():
 
     fig.legend(lines, labels, ncol=2, loc='lower left', bbox_to_anchor=(0.33, 0.0), )
     # plt.savefig('ducky_reparameterization_no_ctrpts.pdf')
-    plt.savefig('sphere_ctrpts_150_eval_100.pdf')
+    plt.savefig('luigi_ctrpts_150_eval_100.pdf')
     plt.show()
     pass
 
