@@ -3,7 +3,7 @@ import torch
 import numpy as np
 torch.manual_seed(120)
 from tqdm import tqdm
-from pytorch3d.loss import chamfer_distance
+# from pytorch3d.loss import chamfer_distance
 from NURBSDiff.nurbs_eval import SurfEval
 from NURBSDiff.surf_eval import SurfEval as SurfEvalBS
 import matplotlib.pyplot as plt
