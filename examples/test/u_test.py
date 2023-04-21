@@ -18,31 +18,24 @@ import torch.nn.functional as F
 # from scipy.spatial.distance import directed_hausdorff
 # import offset_eval as off
 import random
+from read_config import Config
 
 SMALL_SIZE = 12
 MEDIUM_SIZE = 16
 BIGGER_SIZE = 20
 
-plt.rc('font', family='sans-serif') 
-plt.rc('font', serif='Times') 
-plt.rc('font', size=SMALL_SIZE)          # controls default text sizes
-plt.rc('axes', titlesize=SMALL_SIZE)     # fontsize of the axes title
-plt.rc('axes', labelsize=MEDIUM_SIZE)    # fontsize of the x and y labels
-plt.rc('xtick', labelsize=SMALL_SIZE)    # fontsize of the tick labels
-plt.rc('ytick', labelsize=SMALL_SIZE)    # fontsize of the tick labels
-plt.rc('legend', fontsize=SMALL_SIZE)    # legend fontsize
-plt.rc('figure', titlesize=BIGGER_SIZE)  # fontsize of the figure title
+def init_plt():
+    plt.rc('font', family='sans-serif') 
+    plt.rc('font', serif='Times') 
+    plt.rc('font', size=SMALL_SIZE)          # controls default text sizes
+    plt.rc('axes', titlesize=SMALL_SIZE)     # fontsize of the axes title
+    plt.rc('axes', labelsize=MEDIUM_SIZE)    # fontsize of the x and y labels
+    plt.rc('xtick', labelsize=SMALL_SIZE)    # fontsize of the tick labels
+    plt.rc('ytick', labelsize=SMALL_SIZE)    # fontsize of the tick labels
+    plt.rc('legend', fontsize=SMALL_SIZE)    # legend fontsize
+    plt.rc('figure', titlesize=BIGGER_SIZE)  # fontsize of the figure title
 
 
-def read_weights(filename, sep=","):
-    try:
-        with open(filename, "r") as fp:
-            content = fp.read()
-            content_arr = [float(w) for w in (''.join(content.split())).split(sep)]
-            return content_arr
-    except IOError as e:
-        print("An error occurred: {}".format(e.args[-1]))
-        raise e
 def generate_gradient(start_color, end_color, steps):
     # Convert the start and end colors to RGB tuples
     rgb_start = tuple(int(start_color[i:i+2], 16) for i in (1, 3, 5))
@@ -86,12 +79,12 @@ def adjust_plot(ax):
     ax.dist = 6.5
     ax.elev = 30
 
-    ax.set_xlim([-1, 1])
-    ax.set_xlim([-1, 1])
-    ax.set_xlim([-1, 1])
-    ax.set_xlim([-1, 1])
-    ax.set_xlim([-1, 1])
-    ax.set_xlim([-1, 1])
+    # ax.set_xlim([-1, 1])
+    # ax.set_xlim([-1, 1])
+    # ax.set_xlim([-1, 1])
+    # ax.set_xlim([-1, 1])
+    # ax.set_xlim([-1, 1])
+    # ax.set_xlim([-1, 1])
 
     ax.set_xticks([])
     ax.set_yticks([])
@@ -168,10 +161,11 @@ def plot_diff_subfigure(surface_points, ax):
 def chamfer_distance(pred, gt, sqrt=False):
     """
     Computes average chamfer distance prediction and groundtruth
-    :param pred: Prediction: B x N x 3
-    :param gt: ground truth: B x M x 3
+    :param pred: Prediction: B x M x N x 3
+    :param gt: ground truth: B x M x N x 3
     :return:
     """
+    # print(pred.shape)
     if isinstance(pred, np.ndarray):
         pred = Variable(torch.from_numpy(pred.astype(np.float32))).cuda()
 
@@ -189,6 +183,42 @@ def chamfer_distance(pred, gt, sqrt=False):
     cd = torch.mean(torch.min(diff, 1)[0], 1) + torch.mean(torch.min(diff, 2)[0], 1)
     cd = torch.mean(cd) / 2.0
     return cd
+
+def sinkhorn_loss(pred, gt, epsilon=0.1, n_iters=5):
+    """
+    Computes the Sinkhorn distance between prediction and groundtruth point clouds.
+    :param pred: Prediction: B x N x 3
+    :param gt: Ground truth: B x M x 3
+    :param epsilon: Regularization strength for Sinkhorn-Knopp algorithm
+    :param n_iters: Number of iterations for Sinkhorn-Knopp algorithm
+    :return: Sinkhorn distance between prediction and groundtruth point clouds
+    """
+    if isinstance(pred, np.ndarray):
+        pred = torch.from_numpy(pred.astype(np.float32)).cuda()
+
+    if isinstance(gt, np.ndarray):
+        gt = torch.from_numpy(gt.astype(np.float32)).cuda()
+
+    batch_size, n_points, _ = pred.shape
+    _, m_points, _ = gt.shape
+
+    # Compute pairwise distances
+    dist = torch.sum((pred.unsqueeze(2) - gt.unsqueeze(1)) ** 2, dim=-1)
+
+    # Compute Sinkhorn-Knopp distance
+    K = torch.exp(-dist / epsilon)
+    u = torch.ones(batch_size, n_points).cuda() / n_points
+    v = torch.ones(batch_size, m_points).cuda() / m_points
+
+    for i in range(n_iters):
+        u = 1.0 / torch.matmul(K, v.unsqueeze(-1)).squeeze(-1)
+        v = 1.0 / torch.matmul(K.transpose(1, 2), u.unsqueeze(-1)).squeeze(-1)
+
+    T = torch.matmul(torch.matmul(torch.diag(u), K), torch.diag(v))
+    sinkhorn_dist = torch.sum(T * dist) / batch_size
+
+    return sinkhorn_dist
+
 
 def laplacian_loss_unsupervised(output, dist_type="l2"):
     filter = ([[[0.0, 0.25, 0.0], [0.25, -1.0, 0.25], [0.0, 0.25, 0.0]],
@@ -210,6 +240,34 @@ def laplacian_loss_unsupervised(output, dist_type="l2"):
     dist = torch.mean(dist)
 
     return dist
+
+def laplacian_loss(output, gt, dist_type="l2"):
+    """
+    Computes the laplacian of the input and output grid and defines
+    regression loss.
+    :param output: predicted control points grid. Makes sure the orientation/
+    permutation of this output grid matches with the ground truth orientation.
+    This is done by finding the least cost orientation during training.
+    :param gt: gt control points grid.
+    """
+
+    filter = ([[[0.0, 0.25, 0.0], [0.25, -1.0, 0.25], [0.0, 0.25, 0.0]],
+               [[0, 0, 0], [0, 0, 0], [0, 0, 0]],
+               [[0, 0, 0], [0, 0, 0], [0, 0, 0]]])
+    filter = np.stack([filter, np.roll(filter, 1, 0), np.roll(filter, 2, 0)])
+
+    filter = -np.array(filter, dtype=np.float32)
+    filter = Variable(torch.from_numpy(filter)).cuda()
+
+    laplacian_output = F.conv2d(output.permute(0, 3, 1, 2), filter, padding=1)
+    laplacian_input = F.conv2d(gt.permute(0, 3, 1, 2), filter, padding=1)
+    if dist_type == "l2":
+        dist = torch.sum((laplacian_output) ** 2, (1,2,3)) - torch.sum((laplacian_input)**2,(1,2,3)) 
+        # dist = torch.sum((laplacian_output) ** 2, (1,2,3)) + torch.sum((laplacian_input)**2,(1,2,3))
+    elif dist_type == "l1":
+        dist = torch.abs(torch.sum(laplacian_output.mean(),1) - torch.sum(laplacian_input.mean(),1))
+    dist = torch.mean(dist)
+    return abs(dist)
 
 # def laplacian_loss_unsupervised(output, dist_type="l2"):
 #     filter = torch.tensor([[[0.0, 0.25, 0.0], [0.25, -1.0, 0.25], [0.0, 0.25, 0.0]],
@@ -253,32 +311,43 @@ def hausdorff_distance(pred, gt):
     return hd
 
 
-def main():
+def main(config):
+    
+    gt_path = config.gt_pc
+    ctr_pts = config.ctrpts_size
+    resolution = config.resolution
+    p = q = config.degree
+    out_dim = config.out_dim
+    num_epochs = config.num_epochs
+
     timing = []
     # load point cloud
     max_coord = min_coord = 0
-    resolution = 100
-    ctr_pts = 20
-    p = q = 4
-    with open('meshes/luigi_' + str(resolution * resolution) + '.off', 'r') as f:
-        lines = f.readlines()
 
-        # skip the first line
-        lines = lines[2:]
-        lines = random.sample(lines, k=resolution * resolution)
-        # extract vertex positions
+    # with open(gt_path + '_' + str(resolution * resolution) + '.off', 'r') as f:
+    #     lines = f.readlines()
+
+    #     # skip the first line
+    #     lines = lines[2:]
+    #     lines = random.sample(lines, k=resolution * resolution)
+    #     # extract vertex positions
+    #     vertex_positions = []
+    #     for line in lines:
+    #         x, y, z = map(float, line.split()[:3])
+    #         min_coord = min(min_coord, x, y, z)
+    #         max_coord = max(max_coord, x, y, z)
+    #         vertex_positions.append((x, y, z))
+    #     range_coord = max(abs(min_coord), abs(max_coord))
+    #     # range_coord = 1
+    #     vertex_positions = [(x/range_coord, y/range_coord, z/range_coord) for x, y, z in vertex_positions]
+
+    with open(gt_path, 'r') as f:
+        lines = f.readlines()
         vertex_positions = []
         for line in lines:
-            x, y, z = map(float, line.split()[:3])
-            min_coord = min(min_coord, x, y, z)
-            max_coord = max(max_coord, x, y, z)
-            vertex_positions.append((x, y, z))
-        range_coord = max(abs(min_coord), abs(max_coord))
-        vertex_positions = [(x/range_coord, y/range_coord, z/range_coord) for x, y, z in vertex_positions]
-            # vertex_positions.append([x, y, z])
-    # print(len(vertex_positions))
-    # print(vertex_positions[1])
-    print(len(vertex_positions))
+            if line.startswith('v'):
+                x, y, z = line.split()[1:4]
+                vertex_positions.append([float(x), float(y), float(z)])
 
     num_ctrl_pts1 = ctr_pts
     num_ctrl_pts2 = ctr_pts
@@ -304,7 +373,7 @@ def main():
     opt2 = torch.optim.Adam(iter([knot_int_u, knot_int_v]), lr=1e-2)
     lr_schedule1 = torch.optim.lr_scheduler.ReduceLROnPlateau(opt1, patience=3)
     lr_schedule2 = torch.optim.lr_scheduler.ReduceLROnPlateau(opt2, patience=3)
-    pbar = tqdm(range(3000))
+    pbar = tqdm(range(num_epochs))
     colors = generate_gradient('#ff0000', '#00ff00', (num_ctrl_pts1 - 3) * (num_ctrl_pts2 - 3) // 2) + generate_gradient('#00ff00', '#0000ff', (num_ctrl_pts1 - 3) * (num_ctrl_pts2 - 3) // 2)
     fig = plt.figure(figsize=(15, 9))
     time1 = time.time()
@@ -323,13 +392,13 @@ def main():
             out = layer((torch.cat((inp_ctrl_pts,weights), -1), torch.cat((knot_rep_p_0,knot_int_u,knot_rep_p_1), -1), torch.cat((knot_rep_q_0,knot_int_v,knot_rep_q_1), -1)))
 
             loss = 0
-            # loss += 0.1 * laplacian_loss_unsupervised(out)
-            out = out.reshape(1, num_eval_pts_u*num_eval_pts_v, 3)
-            tgt = target.reshape(1, num_eval_pts_u*num_eval_pts_v, 3)
+            # loss += 0.001 * laplacian_loss(out, target)
+            # out = out.reshape(1, num_eval_pts_u*num_eval_pts_v, 3)
+            # tgt = target.reshape(1, num_eval_pts_u*num_eval_pts_v, 3)
             # loss += 10 * hausdorff_distance(out, tgt)
-            # loss += ((out - tgt) ** 2).mean() #+ 10 * directed_hausdorff(out, tgt)
-            loss += chamfer_distance(out, tgt) 
-            
+            # loss += ((out - target) ** 2).mean() #+ 10 * directed_hausdorff(out, tgt)
+            loss += chamfer_distance(out, target) 
+            # loss += sinkhorn_loss(out, tgt, 0.1, 1000)
             
 
             loss.backward(retain_graph=True)
@@ -342,8 +411,8 @@ def main():
 
 
         out = layer((torch.cat((inp_ctrl_pts,weights), -1), torch.cat((knot_rep_p_0,knot_int_u,knot_rep_p_1), -1), torch.cat((knot_rep_q_0,knot_int_v,knot_rep_q_1), -1)))
-        target = target.reshape(1,num_eval_pts_u,num_eval_pts_v,3)
-        out = out.reshape(1,num_eval_pts_u,num_eval_pts_v,3)
+        # target = target.reshape(1,num_eval_pts_u,num_eval_pts_v,3)
+        # out = out.reshape(1,num_eval_pts_u,num_eval_pts_v,3)
         
         if loss.item() < 1e-4:
             print((time.time() - time1)/ (i + 1)) 
@@ -374,7 +443,7 @@ def main():
     predictedknotv = [0., 0., 0., 0., 0.] + predictedknotv + [1., 1., 1., 1.]
 
     # Open the file in write mode
-    with open('u_test.cpt', 'w') as f:
+    with open('generated/u_test.cpt', 'w') as f:
         # Loop over the array rows
         x = predictedctrlpts
         x = x.reshape(-1, 3)
@@ -384,7 +453,7 @@ def main():
             # Write the row values to the file as a string separated by spaces
             f.write(' '.join([str(x) for x in row]) + '\n')
 
-    with open('u_test.weights', 'w') as f:
+    with open('generated/u_test.weights', 'w') as f:
         # Loop over the array rows
         x = predictedweights
 
@@ -394,7 +463,7 @@ def main():
             # Write the row values to the file as a string separated by spaces
             f.write(','.join([str(x) for x in row_flat]) + '\n')
 
-    with open('u_test.knotu', 'w') as f:
+    with open('generated/u_test.knotu', 'w') as f:
         # Loop over the array rows
         x = predictedknotu
 
@@ -404,7 +473,7 @@ def main():
             # Write the row values to the file as a string separated by spaces
             f.write(','.join([str(row)]) + '\n')
 
-    with open('u_test.knotv', 'w') as f:
+    with open('generated/u_test.knotv', 'w') as f:
         # Loop over the array rows
         x = predictedknotv
 
@@ -427,17 +496,17 @@ def main():
     # print(np.shape(predicted_extended))
     ax1 = fig.add_subplot(141, projection='3d', adjustable='box', proj_type='ortho')
     ax1.set_box_aspect([1,1,1])
-    ax1.scatter(target_mpl[:, :, 0], target_mpl[:, :, 1], target_mpl[:, :,2], color='red', label=['GT Surface'])
+    ax1.plot_wireframe(target_mpl[:, :, 0], target_mpl[:, :, 1], target_mpl[:, :,2], color='red', label=['GT Surface'])
     adjust_plot(ax1)
 
     ax2 = fig.add_subplot(142, projection='3d', adjustable='box', proj_type='ortho')
     ax2.set_box_aspect([1,1,1])
     # ax2.plot_wireframe(predictedctrlpts[:, :,0], predictedctrlpts[:, :, 1], predictedctrlpts[:, :, 2], color='blue', label=['Predicted Control Points'])
-    ax2.scatter(predicted[:, :, 0], predicted[:, :,1], predicted[:, :,2], color='lightgreen', label=['Predicted Surface'])
+    ax2.plot_wireframe(predicted[:, :, 0], predicted[:, :,1], predicted[:, :,2], color='lightgreen', label=['Predicted Surface'])
     adjust_plot(ax2)
 
     # using training model to plot the surface
-    new_layer = SurfEval(num_ctrl_pts1, num_ctrl_pts2, dimension=3, p=4, q=4, out_dim_u=256, out_dim_v=256, method='tc', dvc='cuda').cuda()
+    new_layer = SurfEval(num_ctrl_pts1, num_ctrl_pts2, dimension=3, p=p, q=1, out_dim_u=out_dim, out_dim_v=out_dim, method='tc', dvc='cuda').cuda()
 
     knot_rep_p_0 = torch.zeros(1,p+1).cuda()
     knot_rep_p_1 = torch.zeros(1,p).cuda()
@@ -445,7 +514,7 @@ def main():
     knot_rep_q_1 = torch.zeros(1,q).cuda()
 
     predicted_target = new_layer((torch.cat((inp_ctrl_pts,weights), -1), torch.cat((knot_rep_p_0,knot_int_u,knot_rep_p_1), -1), torch.cat((knot_rep_q_0,knot_int_v,knot_rep_q_1), -1)))
-    predicted_target = predicted_target.detach().cpu().numpy().squeeze(0).reshape(256, 256, 3)
+    predicted_target = predicted_target.detach().cpu().numpy().squeeze(0).reshape(out_dim, out_dim, 3)
 
 
     # predicted_target_ctrl_pts = torch.from_numpy(np.concatenate([predictedctrlpts, predictedweights],axis=-1)).view(1,num_ctrl_pts1,num_ctrl_pts2,4)
@@ -459,7 +528,7 @@ def main():
 
     try:
         # ax3.plot_wireframe(predictedctrlpts[:, :, 0], predictedctrlpts[:, :, 1], predictedctrlpts[:, :, 2], color='lightgreen', label=['Predicted Control points'])
-        ax3.scatter(predicted_target[:, :, 0], predicted_target[:, :, 1], predicted_target[:, :, 2], color='red')
+        ax3.plot_wireframe(predicted_target[:, :, 0], predicted_target[:, :, 1], predicted_target[:, :, 2], color='red')
     except Exception as e:
         print(e)
     adjust_plot(ax3)
@@ -491,12 +560,31 @@ def main():
 
     fig.legend(lines, labels, ncol=2, loc='lower left', bbox_to_anchor=(0.33, 0.0), )
     # plt.savefig('ducky_reparameterization_no_ctrpts.pdf')
-    plt.savefig('luigi_ctrpts_150_eval_100.pdf')
+    # plt.savefig('plane_ctrpts_150_eval_100.pdf')
     plt.show()
+
+    with open('generated/u_test.OFF', 'w') as f:
+        # Loop over the array rows
+        f.write('OFF\n')
+        f.write(str(out_dim * out_dim) + ' ' + '0 0\n')
+        for i in range(out_dim):
+            for j in range(out_dim):
+                # print(predicted_target[i, j, :])
+                line = str(predicted_target[i, j, 0]) + ' ' + str(predicted_target[i, j, 1]) + ' ' + str(predicted_target[i, j, 2]) + '\n'
+                f.write(line)
+
     pass
 
 if __name__ == '__main__':
-    main()
+    
+    config = Config('./configs/u_test.yml')
+    print(config.config)
+
+    init_plt()
+
+    main(config)
+
+
 
 
     
