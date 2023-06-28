@@ -1,0 +1,10 @@
+control points len(ctrpts_u) = len(ctrpts_v) = 24:
+ loss is 8.332581273862161e-07, epoch is 16
+control points len(ctrpts_u) = len(ctrpts_v) = 29:
+ loss is 6.225702122719667e-07, epoch is 9
+control points len(ctrpts_u) = len(ctrpts_v) = 34:
+ loss is 8.27299459160713e-07, epoch is 7
+control points len(ctrpts_u) = len(ctrpts_v) = 39:
+ loss is 1.6631065591354854e-07, epoch is 7
+control points len(ctrpts_u) = len(ctrpts_v) = 44:
+ loss is 1.0316067289295461e-07, epoch is 7

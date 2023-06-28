@@ -2,6 +2,8 @@ import math
 import time
 import torch
 import numpy as np
+
+from DuckyFittingOriginal import read_weights
 torch.manual_seed(120)
 from tqdm import tqdm
 # from pytorch3d.loss import chamfer_distance
@@ -312,6 +314,8 @@ def hausdorff_distance(pred, gt):
 
 
 def main(config):
+
+
     
     gt_path = config.gt_pc
     ctr_pts = config.ctrpts_size
@@ -319,42 +323,80 @@ def main(config):
     p = q = config.degree
     out_dim = config.out_dim
     num_epochs = config.num_epochs
+    loss_type = config.loss_type
+    ignore_uv = config.ignore_uv
 
-    timing = []
+    object_name = gt_path.split("/")[-1].split(".")[0]
+    if object_name[-1] == '1':
+        object_name = 'ducky'
+    elif 'custom_duck' in object_name:
+        object_name = 'custom_duck'
+
     # load point cloud
     max_coord = min_coord = 0
 
-    # with open(gt_path + '_' + str(resolution * resolution) + '.off', 'r') as f:
-    #     lines = f.readlines()
+    # ducky test 
+    ####################################
+    if object_name == 'ducky':
+        knot_u = np.array([-1.5708, -1.5708, -1.5708, -1.5708, -1.0472, -0.523599, 0, 0.523599, 0.808217,
+                        1.04015, 1.0472, 1.24824, 1.29714, 1.46148, 1.5708, 1.5708, 1.5708, 1.5708])
+        knot_u = (knot_u - knot_u.min())/(knot_u.max()-knot_u.min())
+        knot_v = np.array([-3.14159, -3.14159, -3.14159, -3.14159, -2.61799, -2.0944, -1.0472, -0.523599,
+                                6.66134e-016, 0.523599, 1.0472, 2.0944, 2.61799, 3.14159, 3.14159, 3.14159, 3.14159])
+        knot_v = (knot_v - knot_v.min())/(knot_v.max()-knot_v.min())
+        ctrlpts = np.array(exchange.import_txt("../Ducky/duck1.ctrlpts", separator=" "))
+        weights = np.array(read_weights("../Ducky/duck1.weights")).reshape(14 * 13, 1)
+        target_ctrl_pts = torch.from_numpy(np.concatenate([ctrlpts,weights],axis=-1)).view(1, 14, 13, 4)
+        target_eval_layer = SurfEvalBS(14, 13, knot_u=knot_u, knot_v=knot_v, dimension=3, p=3, q=3, out_dim_u=resolution, out_dim_v=resolution)
+        target = target_eval_layer(target_ctrl_pts).float().cuda()
+    ####################################
+    elif object_name == 'custom_duck':
+        knot_u = utilities.generate_knot_vector(3, 18)
+        knot_v = utilities.generate_knot_vector(3, 17)
+        ctrlpts = np.array(exchange.import_txt("../Ducky/custom_duck.ctrlpts", separator=" "))
+        weights = np.array(read_weights("../Ducky/custom_duck.weights")).reshape(18 * 17, 1)
+        target_ctrl_pts = torch.from_numpy(np.concatenate([ctrlpts,weights],axis=-1)).view(1, 18, 17, 4)
+        target_eval_layer = SurfEvalBS(18, 17, knot_u=knot_u, knot_v=knot_v, dimension=3, p=3, q=3, out_dim_u=resolution, out_dim_v=resolution)
+        target = target_eval_layer(target_ctrl_pts).float().cuda()
 
-    #     # skip the first line
-    #     lines = lines[2:]
-    #     lines = random.sample(lines, k=resolution * resolution)
-    #     # extract vertex positions
+    # other off files test
+    ####################################
+    else:
+        with open(gt_path + '_' + str(resolution * resolution) + '.off', 'r') as f:
+            lines = f.readlines()
+
+            # skip the first line
+            lines = lines[2:]
+            lines = random.sample(lines, k=resolution * resolution)
+            # extract vertex positions
+            vertex_positions = []
+            for line in lines:
+                x, y, z = map(float, line.split()[:3])
+                min_coord = min(min_coord, x, y, z)
+                max_coord = max(max_coord, x, y, z)
+                vertex_positions.append((x, y, z))
+            range_coord = max(abs(min_coord), abs(max_coord)) / 1
+            # range_coord = 1
+            vertex_positions = [(x/range_coord, y/range_coord, z/range_coord) for x, y, z in vertex_positions]
+            target = torch.tensor(vertex_positions).reshape(1, resolution, resolution, 3).float().cuda()
+    ##########################################
+
+    # with open(gt_path, 'r') as f:
+    #     lines = f.readlines()
     #     vertex_positions = []
     #     for line in lines:
-    #         x, y, z = map(float, line.split()[:3])
-    #         min_coord = min(min_coord, x, y, z)
-    #         max_coord = max(max_coord, x, y, z)
-    #         vertex_positions.append((x, y, z))
-    #     range_coord = max(abs(min_coord), abs(max_coord))
-    #     # range_coord = 1
-    #     vertex_positions = [(x/range_coord, y/range_coord, z/range_coord) for x, y, z in vertex_positions]
+    #         if line.startswith('v'):
+    #             x, y, z = line.split()[1:4]
+    #             vertex_positions.append([float(x), float(y), float(z)])
+    # target = torch.tensor(vertex_positions).reshape(1, num_eval_pts_u, num_eval_pts_v, 3).float().cuda()
 
-    with open(gt_path, 'r') as f:
-        lines = f.readlines()
-        vertex_positions = []
-        for line in lines:
-            if line.startswith('v'):
-                x, y, z = line.split()[1:4]
-                vertex_positions.append([float(x), float(y), float(z)])
 
     num_ctrl_pts1 = ctr_pts
     num_ctrl_pts2 = ctr_pts
     num_eval_pts_u = resolution
     num_eval_pts_v = resolution
 
-    target = torch.tensor(vertex_positions).reshape(1, num_eval_pts_u, num_eval_pts_v, 3).float().cuda()
+
 
     # print(target.shape)
     # PTS = target.detach().numpy().squeeze()
@@ -393,12 +435,22 @@ def main(config):
 
             loss = 0
             # loss += 0.001 * laplacian_loss(out, target)
-            # out = out.reshape(1, num_eval_pts_u*num_eval_pts_v, 3)
-            # tgt = target.reshape(1, num_eval_pts_u*num_eval_pts_v, 3)
-            # loss += 10 * hausdorff_distance(out, tgt)
-            # loss += ((out - target) ** 2).mean() #+ 10 * directed_hausdorff(out, tgt)
-            loss += chamfer_distance(out, target) 
-            # loss += sinkhorn_loss(out, tgt, 0.1, 1000)
+           
+
+            if ignore_uv:
+                out = out.reshape(1, num_eval_pts_u*num_eval_pts_v, 3)
+                tgt = target.reshape(1, num_eval_pts_u*num_eval_pts_v, 3)
+                if loss_type == 'chamfer':
+                    loss += chamfer_distance(out, tgt)
+                elif loss_type == 'mse':
+                    loss += ((out - tgt) ** 2).mean()
+            else:
+                if loss_type == 'chamfer':
+                    loss += chamfer_distance(out, target)
+                elif loss_type == 'mse':
+                    loss += ((out - target) ** 2).mean()
+
+
             
 
             loss.backward(retain_graph=True)
@@ -446,12 +498,17 @@ def main(config):
     with open('generated/u_test.cpt', 'w') as f:
         # Loop over the array rows
         x = predictedctrlpts
-        x = x.reshape(-1, 3)
-        for row in x:
-            # Flatten the row to a 1D array
-            # row_flat = row.reshape(-1, 3)
-            # Write the row values to the file as a string separated by spaces
-            f.write(' '.join([str(x) for x in row]) + '\n')
+        x = x.reshape(ctr_pts, ctr_pts, 3)
+        
+        for i in range(ctr_pts):
+            for j in range(ctr_pts):
+                # print(predicted_target[i, j, :])
+                line = str(x[i, j, 0]) + ',' + str(x[i, j, 1]) + ',' + str(x[i, j, 2])
+                f.write(line)
+                if (j == ctr_pts - 1):
+                    f.write('\n')
+                else:
+                    f.write(';')
 
     with open('generated/u_test.weights', 'w') as f:
         # Loop over the array rows
@@ -494,15 +551,15 @@ def main(config):
     # predicted_extended = predicted_extended.reshape(-1, 3)
     # print(predicted_extended)
     # print(np.shape(predicted_extended))
-    ax1 = fig.add_subplot(141, projection='3d', adjustable='box', proj_type='ortho')
-    ax1.set_box_aspect([1,1,1])
-    ax1.plot_wireframe(target_mpl[:, :, 0], target_mpl[:, :, 1], target_mpl[:, :,2], color='red', label=['GT Surface'])
+    ax1 = fig.add_subplot(151, projection='3d', adjustable='box', proj_type='ortho', aspect='equal')
+    # ax1.set_box_aspect([1,1,1])
+    ax1.plot_wireframe(target_mpl[:, :, 0], target_mpl[:, :, 1], target_mpl[:, :,2], color='red', label='GT Surface')
     adjust_plot(ax1)
 
-    ax2 = fig.add_subplot(142, projection='3d', adjustable='box', proj_type='ortho')
-    ax2.set_box_aspect([1,1,1])
+    ax2 = fig.add_subplot(152, projection='3d', adjustable='box', proj_type='ortho', aspect='equal')
+    # ax2.set_box_aspect([1,1,1])
     # ax2.plot_wireframe(predictedctrlpts[:, :,0], predictedctrlpts[:, :, 1], predictedctrlpts[:, :, 2], color='blue', label=['Predicted Control Points'])
-    ax2.plot_wireframe(predicted[:, :, 0], predicted[:, :,1], predicted[:, :,2], color='lightgreen', label=['Predicted Surface'])
+    ax2.plot_wireframe(predicted[:, :, 0], predicted[:, :,1], predicted[:, :,2], color='lightgreen', label='Predicted Surface')
     adjust_plot(ax2)
 
     # using training model to plot the surface
@@ -523,30 +580,43 @@ def main(config):
     # predicted_target = predicted_target_eval_layer(predicted_target_ctrl_pts).float().cuda()
     # predicted_target = predicted_target.detach().cpu().numpy().squeeze(0).reshape(-1, 256, 256, 3)
 
-    ax3 = fig.add_subplot(143, projection='3d', adjustable='box', proj_type='ortho')
-    ax3.set_box_aspect([1,1,1])
+    ax3 = fig.add_subplot(153, projection='3d', adjustable='box', proj_type='ortho', aspect='equal')
+    # ax3.set_box_aspect([1,1,1])
 
     try:
         # ax3.plot_wireframe(predictedctrlpts[:, :, 0], predictedctrlpts[:, :, 1], predictedctrlpts[:, :, 2], color='lightgreen', label=['Predicted Control points'])
-        ax3.plot_wireframe(predicted_target[:, :, 0], predicted_target[:, :, 1], predicted_target[:, :, 2], color='red')
+        ax3.plot_wireframe(predicted_target[:, :, 0], predicted_target[:, :, 1], predicted_target[:, :, 2], color='violet', label='Reconstructed Surface')
     except Exception as e:
         print(e)
     adjust_plot(ax3)
 
+    ax4 = fig.add_subplot(154, projection='3d', adjustable='box', proj_type='ortho', aspect='equal')
+    # ax4.set_box_aspect([1,1,1])
+
+    layer = SurfEval(num_ctrl_pts1, num_ctrl_pts2, dimension=3, p=p, q=q, out_dim_u=out_dim, out_dim_v=out_dim, method='tc', dvc='cuda').cuda()
+    knot_rep_p_0 = torch.zeros(1,p+1).cuda()
+    knot_rep_p_1 = torch.zeros(1,p).cuda()
+    knot_rep_q_0 = torch.zeros(1,q+1).cuda()
+    knot_rep_q_1 = torch.zeros(1,q).cuda()
+    out2 = layer((torch.cat((inp_ctrl_pts,weights), -1), torch.cat((knot_rep_p_0,knot_int_u,knot_rep_p_1), -1), torch.cat((knot_rep_q_0,knot_int_v,knot_rep_q_1), -1)))
+    out2 = out2.detach().cpu().numpy().squeeze(0).reshape(out_dim, out_dim, 3)
+    ax4.plot_wireframe(out2[:, :, 0], out2[:, :, 1], out2[:, :, 2], color='cyan', label='Reconstructed Surface2')
+    adjust_plot(ax4)
+
     target_mpl = target_mpl.reshape(resolution, resolution, 3)
     predicted = predicted.reshape(resolution, resolution, 3)
-    ax4 = fig.add_subplot(144, adjustable='box')
+    ax5 = fig.add_subplot(155, adjustable='box')
     error_map = (((predicted - target_mpl) ** 2) / target_mpl).sum(-1)
 
-    im4 = ax4.imshow(error_map, cmap='jet', interpolation='none', extent=[0, 128, 0, 128], vmin=-0.001, vmax=0.001)
+    im5 = ax5.imshow(error_map, cmap='jet', interpolation='none', extent=[0, 128, 0, 128], vmin=-0.001, vmax=0.001)
     # fig.colorbar(im4, shrink=0.4, aspect=5)
-    fig.colorbar(im4, shrink=0.4, aspect=5, ticks=[-0.001, 0, 0.001])
-    ax4.set_xlabel('$u$')
-    ax4.set_ylabel('$v$')
+    fig.colorbar(im5, shrink=0.4, aspect=5, ticks=[-0.001, 0, 0.001])
+    ax5.set_xlabel('$u$')
+    ax5.set_ylabel('$v$')
     x_positions = np.arange(0, 128, 20)  # pixel count at label position
     plt.xticks(x_positions, x_positions)
     plt.yticks(x_positions, x_positions)
-    ax4.set_aspect(1)
+    ax5.set_aspect(1)
 
     # ax5 = fig.add_subplot(235, projection='3d', adjustable='box')
     # plot_diff_subfigure(target_mpl - predicted, ax5)
@@ -560,17 +630,36 @@ def main(config):
 
     fig.legend(lines, labels, ncol=2, loc='lower left', bbox_to_anchor=(0.33, 0.0), )
     # plt.savefig('ducky_reparameterization_no_ctrpts.pdf')
-    # plt.savefig('plane_ctrpts_150_eval_100.pdf')
+    plt.savefig(f'u_{object_name}_ctrpts_{ctr_pts}_eval_{resolution}_reconstruct_{out_dim}.pdf')
     plt.show()
 
-    with open('generated/u_test.OFF', 'w') as f:
+    with open(f'generated/u_{object_name}_ctrpts_{ctr_pts}_eval_{resolution}_reconstruct_{out_dim}.OFF', 'w') as f:
         # Loop over the array rows
         f.write('OFF\n')
         f.write(str(out_dim * out_dim) + ' ' + '0 0\n')
         for i in range(out_dim):
             for j in range(out_dim):
                 # print(predicted_target[i, j, :])
-                line = str(predicted_target[i, j, 0]) + ' ' + str(predicted_target[i, j, 1]) + ' ' + str(predicted_target[i, j, 2]) + '\n'
+                line = str(out2[i, j, 0]) + ' ' + str(out2[i, j, 1]) + ' ' + str(out2[i, j, 2]) + '\n'
+                f.write(line)
+                
+    # with open(f'generated/u_{object_name}.cpt', 'w') as f:
+
+    #     for i in range(out_dim):
+    #         for j in range(out_dim):
+    #             # print(predicted_target[i, j, :])
+    #             line = str(out2[i, j, 0]) + ',' + str(out2[i, j, 1]) + ',' + str(out2[i, j, 2]) + ';'
+    #             f.write(line)
+    #             if (j == out_dim - 1):
+    #                 f.write('\n')
+
+    with open(f'generated/u_{object_name}_predicted_ctrpts_ctrpts_{ctr_pts}_eval_{resolution}_reconstruct_{out_dim}.OFF', 'w') as f:
+        # Loop over the array rows
+        f.write('OFF\n')
+        f.write(str(num_ctrl_pts1 * num_ctrl_pts2) + ' ' + '0 0\n')
+        for i in range(num_ctrl_pts1):
+            for j in range(num_ctrl_pts2):
+                line = str(predictedctrlpts[i, j, 0]) + ' ' + str(predictedctrlpts[i, j, 1]) + ' ' + str(predictedctrlpts[i, j, 2]) + '\n'
                 f.write(line)
 
     pass

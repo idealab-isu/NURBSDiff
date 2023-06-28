@@ -73,22 +73,28 @@ class SurfEval(torch.nn.Module):
             out = SurfEvalFunc.apply(input, self.uspan_uv, self.vspan_uv, self.Nu_uv, self.Nv_uv, self.u, self.v, self.m, self.n, self.p, self.q, self._dimension, self.dvc)
             return out
         elif self.method == 'tc':
-            surfaces = (self.Nu_uv[:,0].unsqueeze(0).unsqueeze(-1).unsqueeze(-1)*\
-                input[:,(self.uspan_uv - self.p).type(torch.LongTensor), :,:])[:,:, (self.vspan_uv-self.q).type(torch.LongTensor),:]*\
-                self.Nv_uv[:,0].unsqueeze(0).unsqueeze(0).unsqueeze(-1)
+            # surfaces = (self.Nu_uv[:,0].unsqueeze(0).unsqueeze(-1).unsqueeze(-1)*\
+            #     input[:,(self.uspan_uv - self.p).type(torch.LongTensor), :,:])[:,:, (self.vspan_uv-self.q).type(torch.LongTensor),:]*\
+            #     self.Nv_uv[:,0].unsqueeze(0).unsqueeze(0).unsqueeze(-1)
 
-            for r in range(1,self.q+1):
-                # print(self.vspan_uv-self.q+r)
-                surfaces += (self.Nu_uv[:,0].unsqueeze(0).unsqueeze(-1).unsqueeze(-1)*\
-                    input[:,(self.uspan_uv - self.p).type(torch.LongTensor), :,:])[:,:, (self.vspan_uv-self.q+r).type(torch.LongTensor),:]*\
-                    self.Nv_uv[:,r].unsqueeze(0).unsqueeze(0).unsqueeze(-1)
+            # for r in range(1,self.q+1):
+            #     # print(self.vspan_uv-self.q+r)
+            #     surfaces += (self.Nu_uv[:,0].unsqueeze(0).unsqueeze(-1).unsqueeze(-1)*\
+            #         input[:,(self.uspan_uv - self.p).type(torch.LongTensor), :,:])[:,:, (self.vspan_uv-self.q+r).type(torch.LongTensor),:]*\
+            #         self.Nv_uv[:,r].unsqueeze(0).unsqueeze(0).unsqueeze(-1)
 
-            for l in range(1,self.p+1):
+            for l in range(self.p+1):
                 for r in range(self.q+1):
-                    surfaces += (self.Nu_uv[:,l].unsqueeze(0).unsqueeze(-1).unsqueeze(-1)*\
-                        input[:,(self.uspan_uv - self.p+l).type(torch.LongTensor), :,:])[:,:, (self.vspan_uv-self.q+r).type(torch.LongTensor),:]*\
-                        self.Nv_uv[:,r].unsqueeze(0).unsqueeze(0).unsqueeze(-1)
+                    try:
+                        surfaces += (self.Nu_uv[:,l].unsqueeze(0).unsqueeze(-1).unsqueeze(-1)*\
+                            input[:,(self.uspan_uv - self.p+l).type(torch.LongTensor), :,:])[:,:, (self.vspan_uv-self.q+r).type(torch.LongTensor),:]*\
+                            self.Nv_uv[:,r].unsqueeze(0).unsqueeze(0).unsqueeze(-1)
+                    except:
+                        surfaces = (self.Nu_uv[:,l].unsqueeze(0).unsqueeze(-1).unsqueeze(-1)*\
+                            input[:,(self.uspan_uv - self.p+l).type(torch.LongTensor), :,:])[:,:, (self.vspan_uv-self.q+r).type(torch.LongTensor),:]*\
+                            self.Nv_uv[:,r].unsqueeze(0).unsqueeze(0).unsqueeze(-1)
             # print(np.shape(surfaces))
+            print(surfaces[:,:,:,self._dimension].unsqueeze(-1).shape)
             surfaces = surfaces[:,:,:,:self._dimension]/surfaces[:,:,:,self._dimension].unsqueeze(-1)
             return surfaces
 

@@ -2,7 +2,7 @@ import torch
 import numpy as np
 torch.manual_seed(120)
 from tqdm import tqdm
-from pytorch3d.loss import chamfer_distance
+# from pytorch3d.loss import chamfer_distance
 from NURBSDiff.nurbs_eval import SurfEval
 from NURBSDiff.surf_eval import SurfEval as SurfEvalBS
 import matplotlib.pyplot as plt
@@ -44,8 +44,8 @@ def main():
     if case=='Ducky':
         num_ctrl_pts1 = 14
         num_ctrl_pts2 = 13
-        num_eval_pts_u = 512
-        num_eval_pts_v = 512
+        num_eval_pts_u = 40
+        num_eval_pts_v = 40
         # knot_u = utilities.generate_knot_vector(3, 14)
         # knot_v = utilities.generate_knot_vector(3, 13)
         inp_ctrl_pts = torch.nn.Parameter(torch.rand(1,num_ctrl_pts1, num_ctrl_pts2, 3))
@@ -56,8 +56,8 @@ def main():
                               6.66134e-016, 0.523599, 1.0472, 2.0944, 2.61799, 3.14159, 3.14159, 3.14159, 3.14159])
         knot_v = (knot_v - knot_v.min())/(knot_v.max()-knot_v.min())
         # print(knot_u)
-        ctrlpts = np.array(exchange.import_txt("Ducky/duck1.ctrlpts", separator=" "))
-        weights = np.array(read_weights("Ducky/duck1.weights")).reshape(num_ctrl_pts1 * num_ctrl_pts2,1)
+        ctrlpts = np.array(exchange.import_txt("./Ducky/duck1.ctrlpts", separator=" "))
+        weights = np.array(read_weights("./Ducky/duck1.weights")).reshape(num_ctrl_pts1 * num_ctrl_pts2,1)
         target_ctrl_pts = torch.from_numpy(np.concatenate([ctrlpts,weights],axis=-1)).view(1,num_ctrl_pts1,num_ctrl_pts2,4)
         target_eval_layer = SurfEvalBS(num_ctrl_pts1, num_ctrl_pts2, knot_u=knot_u, knot_v=knot_v, dimension=3, p=3, q=3, out_dim_u=num_eval_pts_u, out_dim_v=num_eval_pts_v)
         target = target_eval_layer(target_ctrl_pts).float().cuda()
@@ -162,6 +162,16 @@ def main():
     fig = plt.figure(figsize=(15, 4))
     ax1 = fig.add_subplot(131, projection='3d', adjustable='box', proj_type='ortho')
     target_mpl = target.cpu().numpy().squeeze()
+    with open('./test/generated/test.off', 'w') as f:
+        # Loop over the array rows
+        x = target_mpl
+        x = x.reshape(-1, 3)
+        
+        for i in range(num_eval_pts_u * num_eval_pts_v):
+                # print(predicted_target[i, j, :])
+                line = str(x[i, 0]) + ' ' + str(x[i, 1]) + ' ' + str(x[i, 2]) + '\n'
+                f.write(line)
+               
     predicted = out.detach().cpu().numpy().squeeze()
     ctrlpts = ctrlpts.reshape(num_ctrl_pts1, num_ctrl_pts2, 3)
     predctrlpts = inp_ctrl_pts.detach().cpu().numpy().squeeze()
@@ -290,7 +300,7 @@ def main():
     fig.legend(lines, labels, ncol=2, loc='lower center', bbox_to_anchor=(0.33, 0.0), )
     plt.savefig('ducky_reparameterization.pdf') 
     plt.show()
-
+    pass
     # layer_2 = SurfEval(num_ctrl_pts1, num_ctrl_pts2, knot_u=knot_u, knot_v=knot_v, dimension=3, p=3, q=3,
     #                    out_dim_u=512,
     #                    out_dim_v=512, dvc='cpp')

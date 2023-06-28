@@ -2,7 +2,7 @@ import torch
 import numpy as np
 torch.manual_seed(120)
 from tqdm import tqdm
-from pytorch3d.loss import chamfer_distance
+# from pytorch3d.loss import chamfer_distance
 from NURBSDiff.nurbs_eval import SurfEval
 from NURBSDiff.surf_eval import SurfEval as SurfEvalBS
 import matplotlib.pyplot as plt
@@ -27,7 +27,7 @@ import trimesh
 # print(sampled_points[0])
 # sampled_points = torch.tensor(sampled_points).reshape((512, 512, 3))
 
-mesh = exchange.import_obj("../Ducky/duck1.obj")[0]
+mesh = exchange.import_obj("examples/Ducky/duck1.obj")[0]
 points = mesh
 # print(points['trangles'])
 # from pymesh import meshio
@@ -124,6 +124,31 @@ def plot_subfigure(num_ctrl_pts1, num_ctrl_pts2, uspan_uv, vspan_uv, surface_poi
     ax.zaxis.set_pane_color((1.0, 1.0, 1.0, 0.0))
     ax._axis3don = False
 
+def chamfer_distance(pred, gt, sqrt=False):
+    """
+    Computes average chamfer distance prediction and groundtruth
+    :param pred: Prediction: B x N x 3
+    :param gt: ground truth: B x M x 3
+    :return:
+    """
+    if isinstance(pred, np.ndarray):
+        pred = Variable(torch.from_numpy(pred.astype(np.float32))).cuda()
+
+    if isinstance(gt, np.ndarray):
+        gt = Variable(torch.from_numpy(gt.astype(np.float32))).cuda()
+
+    pred = torch.unsqueeze(pred, 1)
+    gt = torch.unsqueeze(gt, 2)
+
+    diff = pred - gt
+    diff = torch.sum(diff ** 2, 3)
+    if sqrt:
+        diff = guard_sqrt(diff)
+
+    cd = torch.mean(torch.min(diff, 1)[0], 1) + torch.mean(torch.min(diff, 2)[0], 1)
+    cd = torch.mean(cd) / 2.0
+    return cd
+
 def plot_diff_subfigure(surface_points, ax):
 
     ax.plot_wireframe(surface_points[:, :, 0], surface_points[:, :, 1], surface_points[:, :, 2]
@@ -145,16 +170,16 @@ def main():
 
     num_ctrl_pts1 = 14
     num_ctrl_pts2 = 13
-    num_eval_pts_u = 128
-    num_eval_pts_v = 128
+    num_eval_pts_u = 64
+    num_eval_pts_v = 64
     knot_u = utilities.generate_knot_vector(3, num_ctrl_pts1)
     knot_v = utilities.generate_knot_vector(3, num_ctrl_pts2)
     inp_ctrl_pts = torch.nn.Parameter(torch.rand(1,num_ctrl_pts1, num_ctrl_pts2, 3))
     # Load the OBJ file
 
 
-    ctrlpts = np.array(exchange.import_txt("../Ducky/duck1.ctrlpts", separator=" "))
-    weights = np.array(read_weights("../Ducky/duck1.weights")).reshape(num_ctrl_pts1 * num_ctrl_pts2,1)
+    ctrlpts = np.array(exchange.import_txt("examples/Ducky/duck1.ctrlpts", separator=" "))
+    weights = np.array(read_weights("examples/Ducky/duck1.weights")).reshape(num_ctrl_pts1 * num_ctrl_pts2,1)
     target_ctrl_pts = torch.from_numpy(np.concatenate([ctrlpts,weights],axis=-1)).view(1,num_ctrl_pts1,num_ctrl_pts2,4)
     target_eval_layer = SurfEvalBS(num_ctrl_pts1, num_ctrl_pts2, knot_u=knot_u, knot_v=knot_v, dimension=3, p=3, q=3, out_dim_u=num_eval_pts_u, out_dim_v=num_eval_pts_v)
     target = target_eval_layer(target_ctrl_pts).float().cuda()
@@ -177,9 +202,9 @@ def main():
     weights = torch.nn.Parameter(torch.ones((1,num_ctrl_pts1, num_ctrl_pts2, 1), requires_grad=True).cuda())
     # print(target.shape)
     layer = SurfEval(num_ctrl_pts1, num_ctrl_pts2, dimension=3, p=3, q=3, out_dim_u=num_eval_pts_u, out_dim_v=num_eval_pts_v, method='tc', dvc='cuda').cuda()
-    opt1 = torch.optim.LBFGS(iter([inp_ctrl_pts, weights]), lr=0.5, max_iter=3)
+    opt1 = torch.optim.LBFGS(iter([inp_ctrl_pts, weights]), lr=0.01, max_iter=3)
     opt2 = torch.optim.SGD(iter([knot_int_u, knot_int_v]), lr=1e-3)
-    pbar = tqdm(range(50))
+    pbar = tqdm(range(10000))
     colors = generate_gradient('#ff0000', '#00ff00', (num_ctrl_pts1 - 3) * (num_ctrl_pts2 - 3) // 2) + generate_gradient('#00ff00', '#0000ff', (num_ctrl_pts1 - 3) * (num_ctrl_pts2 - 3) // 2)
     fig = plt.figure(figsize=(15, 9))
     for i in pbar:
@@ -195,15 +220,15 @@ def main():
             opt2.zero_grad()
             # out = layer(inp_ctrl_pts)
             out = layer((torch.cat((inp_ctrl_pts,weights), -1), torch.cat((knot_rep_p_0,knot_int_u,knot_rep_p_1), -1), torch.cat((knot_rep_q_0,knot_int_v,knot_rep_q_1), -1)))
-            loss = ((target-out)**2).mean()
+            # loss = ((target-out)**2).mean()
 
-            # out = out.reshape(1, num_eval_pts_u*num_eval_pts_v, 3)
-            # tgt = target.reshape(1, num_eval_pts_u*num_eval_pts_v, 3)
-            # loss = chamfer_distance_two_side(out,tgt)
+            out = out.reshape(1, num_eval_pts_u*num_eval_pts_v, 3)
+            tgt = target.reshape(1, num_eval_pts_u*num_eval_pts_v, 3)
+            loss = chamfer_distance(out, tgt)
             loss.backward(retain_graph=True)
             return loss
 
-        if (i%300) < 30:
+        if (i%300) < 100:
             loss = opt1.step(closure)
         else:
             loss = opt2.step(closure)        
@@ -254,11 +279,11 @@ def main():
     plt.yticks(x_positions, x_positions)
     ax3.set_aspect(1)
 
-    ax5 = fig.add_subplot(235, projection='3d', adjustable='box')
-    plot_diff_subfigure(target_mpl - predicted, ax5)
+    # ax5 = fig.add_subplot(235, projection='3d', adjustable='box')
+    # plot_diff_subfigure(target_mpl - predicted, ax5)
 
-    ax6 = fig.add_subplot(234, projection='3d', adjustable='box')
-    ax6.plot_wireframe(sampled_points[:, :, 0], sampled_points[:, :, 1], sampled_points[:, :, 2])
+    # ax6 = fig.add_subplot(234, projection='3d', adjustable='box')
+    # ax6.plot_wireframe(sampled_points[:, :, 0], sampled_points[:, :, 1], sampled_points[:, :, 2])
 
     fig.subplots_adjust(hspace=0, wspace=0)
     fig.tight_layout()

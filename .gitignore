@@ -137,3 +137,4 @@ examples/*
 *.stl
 *.png
 *.csv
+*.OFF

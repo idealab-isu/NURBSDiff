@@ -1,0 +1,59 @@
+comment=""
+
+[train]
+
+# model_path = "nips_splinenet_{}_{}_{}_bt_{}_lr_{}_trsz_{}_tsz_{}_wght_{}"
+
+# GT point cloud path
+# gt_pc = "../Ducky/duck1.obj"
+# gt_pc = "../../meshes/cat"
+gt_pc = "../../meshes/sampled/sphere"
+# gt_pc = "../../meshes/duck_pc_possion"
+
+# path to the pre-trained model
+# pretrain_model_path = ""
+
+# Whether to input the normals or not
+normals = False
+
+# number of sampled points
+num_points = 3600
+
+loss_weight = 0.9
+
+batch_size = 36
+
+num_epochs = 1000
+
+# number of control points used on u, v
+ctrpts_size = 10
+
+# base function degree
+degree = 3
+
+# resolution on u, v
+resolution = 50
+
+# reconsted surface on prediction
+out_dim =100
+
+# optimzer
+optim = adam
+
+accum = 4
+
+# Learing rate
+lr1 = 0.5
+lr2 = 0.001
+# Whether to schedule the learning rate or not
+lr_sch = True
+
+# Number of epochs to wait before decaying the learning rate.
+patience = 8
+
+mode = 0
+
+# chamfer | mse
+loss_type = chamfer
+
+ignore_uv = True

@@ -196,23 +196,33 @@ def main():
     timing = time.time()
     num_ctrl_pts1 = 14
     num_ctrl_pts2 = 13
-    num_eval_pts_u = 64
-    num_eval_pts_v = 64
-    knot_u = utilities.generate_knot_vector(3, 14)
-    knot_v = utilities.generate_knot_vector(3, 13)
+    num_eval_pts_u = 128
+    num_eval_pts_v = 128
+    # knot_u = utilities.generate_knot_vector(3, 14)
+    # knot_v = utilities.generate_knot_vector(3, 13)
     inp_ctrl_pts = torch.nn.Parameter(torch.rand(1,num_ctrl_pts1, num_ctrl_pts2, 3))
-    # knot_u = np.array([-1.5708, -1.5708, -1.5708, -1.5708, -1.0472, -0.523599, 0, 0.523599, 0.808217,
-    #                       1.04015, 1.0472, 1.24824, 1.29714, 1.46148, 1.5708, 1.5708, 1.5708, 1.5708])
-    # knot_u = (knot_u - knot_u.min())/(knot_u.max()-knot_u.min())
-    # knot_v = np.array([-3.14159, -3.14159, -3.14159, -3.14159, -2.61799, -2.0944, -1.0472, -0.523599,
-    #                       6.66134e-016, 0.523599, 1.0472, 2.0944, 2.61799, 3.14159, 3.14159, 3.14159, 3.14159])
-    # knot_v = (knot_v - knot_v.min())/(knot_v.max()-knot_v.min())
+    knot_u = np.array([-1.5708, -1.5708, -1.5708, -1.5708, -1.0472, -0.523599, 0, 0.523599, 0.808217,
+                          1.04015, 1.0472, 1.24824, 1.29714, 1.46148, 1.5708, 1.5708, 1.5708, 1.5708])
+    knot_u = (knot_u - knot_u.min())/(knot_u.max()-knot_u.min())
+    knot_v = np.array([-3.14159, -3.14159, -3.14159, -3.14159, -2.61799, -2.0944, -1.0472, -0.523599,
+                          6.66134e-016, 0.523599, 1.0472, 2.0944, 2.61799, 3.14159, 3.14159, 3.14159, 3.14159])
+    knot_v = (knot_v - knot_v.min())/(knot_v.max()-knot_v.min())
     ctrlpts = np.array(exchange.import_txt("../Ducky/duck1.ctrlpts", separator=" "))
     weights = np.array(read_weights("../Ducky/duck1.weights")).reshape(num_ctrl_pts1 * num_ctrl_pts2,1)
     target_ctrl_pts = torch.from_numpy(np.concatenate([ctrlpts,weights],axis=-1)).view(1,num_ctrl_pts1,num_ctrl_pts2,4)
     target_eval_layer = SurfEvalBS(num_ctrl_pts1, num_ctrl_pts2, knot_u=knot_u, knot_v=knot_v, dimension=3, p=3, q=3, out_dim_u=num_eval_pts_u, out_dim_v=num_eval_pts_v)
     target = target_eval_layer(target_ctrl_pts).float().cuda()
+    target_mpl = target.cpu().numpy().squeeze()
 
+    with open(f'generated/u_test_gt.OFF', 'w') as f:
+        # Loop over the array rows
+        f.write('OFF\n')
+        f.write(str(num_eval_pts_u * num_eval_pts_v) + ' ' + '0 0\n')
+        for i in range(num_eval_pts_u):
+            for j in range(num_eval_pts_v):
+                # print(predicted_target[i, j, :])
+                line = str(target_mpl[i, j, 0]) + ' ' + str(target_mpl[i, j, 1]) + ' ' + str(target_mpl[i, j, 2]) + '\n'
+                f.write(line)
     # PTS = target.detach().numpy().squeeze()
     # Max_size = off.Max_size(np.reshape(PTS, [1, num_eval_pts_u * num_eval_pts_v, 3]))
     inp_ctrl_pts = torch.nn.Parameter(torch.rand((1,num_ctrl_pts1,num_ctrl_pts2,3), requires_grad=True).float().cuda())
