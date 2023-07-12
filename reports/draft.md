@@ -17,25 +17,93 @@ NURBS surface is actually a surface which can be parameterized, which means that
 # 2. Related Work
 
 ## 2.1. NURBS-diff
-
+The paper proposed a method to reconstruct a mesh from a nurbs. Follow the idea how geomdl repo is implemented, the author implemented differentible modules for nurbs. With these modules, they are able to optimize the parameters of nurbs surface to fit the input point cloud(at least under supervised learning). We don't elaborate it here since we'll discuss it in the next section. 
 ## 2.2. POCO
-**check **
-The paper proposed a method to reconstruct a mesh from a point cloud using implicit neural networks. There are several novel ideas in this paper. First, to address the scalability issues of encoding the isosurface of the whole object into a latent vector, they instead generate latent vectors on a coarse regular 3d grid and use them to answer occupancy queries. In this way, the latent vector has a weak connection with sampled input point cloud.  Second, to solve the problem of discretization tuning when relying on fixied patches, the authors conduct a learning-based interpolation on nearest neightbors using inferred weights. With these tweaks, the authors are able to reconstruct a mesh from a point cloud with a high accuracy and better details.
-
+**change words to rephrase**
+The paper proposed a method to reconstruct a mesh from a point cloud using implicit neural networks. There are several novel ideas in this paper. First, to address the scalability issues of encoding the isosurface of the whole object into a latent vector, they instead generate latent vectors on a coarse regular 3d grid and use them to answer occupancy queries. In this way, the latent vector has a weak connection with sampled input point cloud.  Second, to solve the problem of discretization tuning when relying on fixied patches, the authors conduct a learning-based interpolation on nearest neightbors using inferred weights. With these tweaks, the authors are able to reconstruct a mesh from a point cloud with a higher accuracy and better details.
 
 # 3. Method
 
 ## 3.1. principle of nurbs surface
+NURBS is short for Non-uniform rational basis spline(NURBS). According to wikipedia, NURBS is a mathematical model using basis splines(B-splines) that is commonly used in computer graphics for representing curves and surfaces(ref: https://en.wikipedia.org/wiki/Non-uniform_rational_B-spline, rephrase). Obvisously, NURBS is a kind of curve modeling(), which differs from ploygonal modeling(rephrase, ref: https://en.wikipedia.org/wiki/Non-uniform_rational_B-spline). Any nurbs should be defined by its control points, weights, degree, and knot vector. By the way, degree and knot vector decide the base functions. In this section, we'll discuss the details of these four parameters and its special case.
 
-## 3.2. **principle of nurbs-diff  main point**
+### 3.1.1. control points
+Control points decide the shape of nurbs curve and surface. Since we focus on surface, we only consider surface case in this report. 
 
-## 3.3. **principle of poco**
+Control points are a set of points in 3D space, which makes up a control polygon, also called a convex hull. As shown in figure xxx, Here is a control ploygon I found from wikipedia(ref:) It reflects the property of control points. Like a net, it encapsulates the surface. It refines the shape of nurbs surface, which means the whole surface can't get out of the control polygon. By the way, this is extremely useful in robotics. To detect if two objects collide, we only need to check if their control polygons collide.
 
+The order and number of control point is also important. Below is a set of figures showing the effect of control points on nurbs surface. 
+
+Figure xxx shows the effect of order of control points, where we can observe that the subfigure xxx displays a perfectly recontructed cylinder, while subfigure xxx is twisted. In fact, they have same control points except for the order. Figure xxx shows the control polygon of these two surfaces. Clearly we can notice that the control polygon of subfigure xxx is disordered, which definitely leads to the twisted surface. 
+
+Figure xxx shows the effect of number of control points. The subfigure xxx displays a perfectly recontructed cylinder, while subfigure xxx is not closed due to lack of the repeated control points. Actually, we may need to replicate some key control points to make it closed, otherwise as shown above, the lack of control points may lead to a open spline.
+
+### 3.1.2. weights
+Weights vector is a vector in which each element ranges from 0 to 1. It solely set the weights of the control points. Below is figure xxx showing how weights affect the shape of nurbs surface. From this figure, we can see that nurbs surface is more likely to approach to the control points with higher weights. In other words, the control points with higher weights have more influence on the shape of nurbs surface.
+
+### 3.1.3. degree
+Degree is an integer which deterines the degree of the base functions. This involves in another concept, which is order. According to wikipedia, the order of a nurbs surface defines the number of nearby control points that related to any given point on the surface(ref: https://en.wikipedia.org/wiki/Non-uniform_rational_B-spline, rephrase). We define the order of a nurbs surface as the degree of the nurbs surface plus 1. Literally, we have:
+$$Order = Degree + 1$$
+
+Commonly, the fourth-order curves, called cubic curves(ref: https://en.wikipedia.org/wiki/Non-uniform_rational_B-spline) is usually used. Hence, with cubic curves, we are capable of generating many complex shapes.
+### 3.1.4. knot vector
+Knot vector is another fairly critical concept in B-spline. Knot vector controls the shape of base functions, which indirectly controls the shape of nurbs surface. For instance, we extract the knot vector from a nurbs surface and knot vecotr is [0, 0, 0.5, 1, 2, 3.3, 3.4, 4, 5.1], then if we multiply each element in the knot vector by 10 while keep its other paremeters to be the same, the shape of the nurbs surface should remain the same. This is one property of knot vector. Only the ratio between two adjacent element in knot vecot influence the shape of base functions as well as the nurbs surface. Besides, there is another property of knot vector, which is the duplicated values in knot vector. Since
+consecutive elements are allowed to have the same value. For instance, a knot vector like [0, 0, 1, 1, 2, 2] is valid. knots with same value may decide the corner of the nurbs surface(ref:). We'll explain these properties in subsetion 3.1.5.
+### 3.1.5. reconstruction of nurbs surface using de-boor algorithm
+de-boor algorithm is a method to reconstruct a nurbs surface using its control points, weights, degree, and knot vector. As for a B-spline curve, the algorithm is as follows:(ref: https://en.wikipedia.org/wiki/De_Boor%27s_algorithm, rephrase). 
+
+$$ S(x)=\sum_i{c_i}{B_{i, p}(x)}$$
+where $c_i$ is the ith control point, $B_{i, p}(x)$ is the ith base function of degree p. The base function is defined as follows:
+$$
+B_{i, 0} = \begin{cases} 
+1 & \text{if } {t_{i}} \leq x < {t_{i+1}} \\
+0 & \text{otherwise }
+\end{cases}
+$$
+$$B_{i, p}(x)=\frac{x-t_i}{t_{i+p}-t_i}B_{i, p-1}(x)+\frac{t_{i+p+1}-x}{t_{i+p+1}-t_{i+1}}B_{i+1, p-1}(x)$$
+$x$ here refers knot value, and we assume it in the range of $[t_k, t_{k+1})$(ref:https://en.wikipedia.org/wiki/De_Boor%27s_algorithm), which means x is involved in the kth base function. According to the definition of base function above, we can simplify $S(x)$ equation as follows:
+$$ S(x)=\sum_{i=k-p}^{k+p+1}{c_i}{B_{i, p}(x)}$$
+The derivation of the equation is in Appendix A.
+The equation xxx indicates that even though not every knot value is involved in surface contstruction, but for these really used knot value, they need at least p knot values before and after them. This is the reason why we need to duplicate some knot values in the both sides of knot vector. For instance, if we have a knot vector like [0, 0.5, 1, 2, 3.3, 3.4, 4, 5.1] and degree is 3, then the knot vector should be extended to [0, 0, 0, 0.5, 1, 2, 3.3, 3.4, 4, 5.1, 5.1, 5.1] by repeating the first and last element at least 3 times and vice versa.
+
+However, the above equation is for B-spline curve. For B-spline surface,  we can consider it as the tensor product(ref:) of two nurbs curves. Thus, it should has two set of knot vectors namely $U$ and $V$. Follow equation xxx, we can derive the equation for nurbs surface as follows(ref: https://en.wikipedia.org/wiki/De_Boor%27s_algorithm, rephrase):
+$$ S(u, v)=\sum_{i=k-p}^{k+p+1}{\sum_{j=l-q}^{l+q+1}{c_{i, j}}{B_{i, p}(u)}{B_{j, q}(v)}}$$
+where $c_{i, j}$ is the control point of the surface, $B_{i, p}(u)$ is the ith base function of degree p in $U$ knot vector, $B_{j, q}(v)$ is the jth base function of degree q in $V$ knot vector. It can be considered as uv mapping of a surface.
+With weights, the equation can be modified as follows:
+
+$$ S(u, v)=\frac{\sum_{i=k-p}^{k+p+1}{\sum_{j=l-q}^{l+q+1}{c_{i, j}}{w_{i, j}}{B_{i, p}(u)}{B_{j, q}(v)}}}{\sum_{i=k-p}^{k+p+1}{\sum_{j=l-q}^{l+q+1}{w_{i, j}}{B_{i, p}(u)}{B_{j, q}(v)}}}$$
+where $w_{i, j}$ is the weight of the control point $c_{i, j}$.
+
+With the equations we got above, it's time to explain the properties above. Beforehand, we mentioned that for the same nurbs, even knot vector is multiplied by a constant, the shape of the nurbs surface won't change. This is because $B_{i, p}(x)$ won't change with proportional scaling of knot vecotr. Besides, if we plot the B-splines given knot vector [0, 0, 0.5, 1, 2, 3.3, 3.4, 4, 5.1] in Figure xxx, we can observe that since xxx is a double/triple knot(ref:), the knot span between these two knot point is zero.
+<!-- The above equation is the general form of nurbs surface. However, in nurbs-diff module, the author only consider the case where $p=q=3$, which means the degree of $U$ knot vector and $V$ knot vector are both 3. In this case, the equation can be simplified as follows: -->
+
+<!-- $$ S(u, v)=\sum_{i=k-3}^{k+4}{\sum_{j=l-3}^{l+4}{c_{i, j}}{B_{i, 3}(u)}{B_{j, 3}(v)}}$$ -->
+### 3.1.6. special case
+From the above introduction, we all know nurbs is short for Non-uniform rational basis spline. Non-uniform refers to the knot vector, which is a non-decreasing vector. Rational refers to the weights, which is a vector range from 0 to 1. If knot vectors are uniform, then the nurbs surface is a uniform rational B-spline surface, while if the weights are all 1, then the nurbs surface is a non-rational nubs surface. This is very significant since the logic of nurbs-diff module is built on the basis of non-rational nurbs surface, which means they ignore the weights of nurbs surface. We'll discuss the details in the next section.
+
+**also from the book 2 lizeth provided**
+
+## 3.2. **principle of subD object**
+According to wikipedia, a subdivision surface(short as SubD surface) is a curved surface represented by a coarser polygon mesh and produced by a recursive alogrithm method(ref: https://en.wikipedia.org/wiki/Subdivision_surface, rephrase). The recursive alogrithm subdivides the biggest surface into smaller and smaller pieces. The process runs recursively, until the surface is small and smooth enough.
+
+**also from the book 2 lizeth provided**
+
+Also, it's signficant to know that the subD surface is not a nurbs since their underlying algorithms are different. The nurbs surface follows the rule of de-boor algorithm, while most subD surfaces follow the rule of catmull-clark algorithm. However, Rhino7(ref) has implemented a subD surface module. For one subD object, in each division, the divsion surface is represented by a nurbs surface with its own control points and knot vectors. In this case, any contorl points and knot vectors of each subD objectm, no matter as a whole or in each division, can be extracted. In this way, we can explore how can we recontruct a nurbs object by dividing it into smaller pieces and reconstructing each piece.
+## 3.3. **principle of nurbs-diff  main point**
+
+## 3.4. **principle of poco**
+# 4. Implementation
+xx
 # 4. Experiments
-
-## 4.1. dataset
-
+I conducted several experiments to test the performance of nurbs-diff and poco. In this section, I'll discuss the details of these experiments.
 ## 4.2. **nurbs-diff**
+### 4.2.1. dataset
+As for dataset of nurbs-diff module, I used the duck object(.OBJ) generated by geomdl(ref) and some more object(.OFF) file. The following figures are displayed in meshlab(ref) as below. 
+
+Apart from duck obj, other objects are created by mesh, which does not have any explict control points and knot vectors. The experiments are mainly focused on these meshes. In other words, we would like to see if nurbs-diff can reconstruct a mesh through control points and knot vectors(as well as weights).
+
+Additionally, I also created some nurbs/subD obejcts using Rhino7 and geomdl for testing. The following figures are displayed in Rhino7 and matplotlib as below.
+
 
 ## 4.3. **poco**
 
@@ -83,3 +151,6 @@ The paper proposed a method to reconstruct a mesh from a point cloud using impli
 - blender(uv mapping)
 
 # 17. Appendix
+
+- How I find the rule of control points of cylinder nurbs surface
+- the combination of subD object
