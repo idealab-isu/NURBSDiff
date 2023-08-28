@@ -306,7 +306,7 @@ for e in range(config.epochs):
             dist_type="l2",
         )
 
-        loss = l_reg * config.loss_weight + (cd + laplac_loss) * (
+        loss = l_reg * config.loss_weight + (cd + _loss) * (
                 1 - config.loss_weight
         )
 

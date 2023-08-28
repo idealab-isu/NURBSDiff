@@ -23,28 +23,33 @@ loss_weight = 0.9
 
 batch_size = 36
 
-num_epochs = 500
+num_epochs = 1000
+
+axis = y
 
 # number of control points used on u, v
 ctrpts_size = 15
+
 ctrlpts_size_u = 15
+
 ctrlpts_size_v = 15
+
 # base function degree
 degree = 3
 
 # resolution on u, v
 resolution = 30
 
-# reconsted surface on prediction
-out_dim = 64
+# reconstruct surface on prediction
+out_dim = 40
 
 # optimzer
 optim = adam
 
 accum = 4
 
-# Learing rate
-lr1 = 0.001
+# Learning rate
+lr1 = 0.1
 lr2 = 0.001
 # Whether to schedule the learning rate or not
 lr_sch = True
@@ -59,4 +64,3 @@ loss_type = chamfer
 
 ignore_uv = True
 
-axis = y

@@ -19,13 +19,16 @@ class Config(object):
 
         # Model name and location to store
         # self.model_path = config["train"]["model_path"]
-
+        self.axis = config["train"]["axis"]
         # GT point cloud path
         self.gt_pc = config["train"]["gt_pc"]
 
         self.ignore_uv = config["train"].as_bool("ignore_uv")
         self.loss_type = config["train"]["loss_type"]
 
+        self.ctrlpts_size_u = config["train"].as_int("ctrlpts_size_u")
+        self.ctrlpts_size_v = config["train"].as_int("ctrlpts_size_v")
+        
         self.resolution = config["train"].as_int("resolution")
         self.out_dim = config["train"].as_int("out_dim")
         # path to the model

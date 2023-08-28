@@ -122,8 +122,6 @@ def supervised(progress_bar, fig, epoch,
         knot_rep_q_0 = torch.zeros(1,q+1).cuda()
         knot_rep_q_1 = torch.zeros(1,q).cuda()
 
-        
-
         def closure():
             opt1.zero_grad()
             opt2.zero_grad()

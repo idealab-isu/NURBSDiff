@@ -17,7 +17,6 @@ from geomdl.visualization import VisMPL
 from geomdl import compatibility
 from torch.autograd.variable import Variable
 import torch.nn.functional as F
-from u_test_u_reverse import generate_cylinder
 # from scipy.spatial.distance import directed_hausdorff
 # import offset_eval as off
 import random
@@ -325,8 +324,6 @@ def main(config):
     loss_type = config.loss_type
     ignore_uv = config.ignore_uv
 
-    sampled_size = 100
-
     object_name = gt_path.split("/")[-1].split(".")[0]
     if object_name[-1] == '1':
         object_name = 'ducky'
@@ -336,26 +333,50 @@ def main(config):
     # load point cloud
     max_coord = min_coord = 0
 
+    # ducky test 
+    ####################################
+    if object_name == 'ducky':
+        knot_u = np.array([-1.5708, -1.5708, -1.5708, -1.5708, -1.0472, -0.523599, 0, 0.523599, 0.808217,
+                        1.04015, 1.0472, 1.24824, 1.29714, 1.46148, 1.5708, 1.5708, 1.5708, 1.5708])
+        knot_u = (knot_u - knot_u.min())/(knot_u.max()-knot_u.min())
+        knot_v = np.array([-3.14159, -3.14159, -3.14159, -3.14159, -2.61799, -2.0944, -1.0472, -0.523599,
+                                6.66134e-016, 0.523599, 1.0472, 2.0944, 2.61799, 3.14159, 3.14159, 3.14159, 3.14159])
+        knot_v = (knot_v - knot_v.min())/(knot_v.max()-knot_v.min())
+        ctrlpts = np.array(exchange.import_txt("../Ducky/duck1.ctrlpts", separator=" "))
+        weights = np.array(read_weights("../Ducky/duck1.weights")).reshape(14 * 13, 1)
+        target_ctrl_pts = torch.from_numpy(np.concatenate([ctrlpts,weights],axis=-1)).view(1, 14, 13, 4)
+        target_eval_layer = SurfEvalBS(14, 13, knot_u=knot_u, knot_v=knot_v, dimension=3, p=3, q=3, out_dim_u=resolution, out_dim_v=resolution)
+        target = target_eval_layer(target_ctrl_pts).float().cuda()
+    ####################################
+    elif object_name == 'custom_duck':
+        knot_u = utilities.generate_knot_vector(3, 18)
+        knot_v = utilities.generate_knot_vector(3, 17)
+        ctrlpts = np.array(exchange.import_txt("../Ducky/custom_duck.ctrlpts", separator=" "))
+        weights = np.array(read_weights("../Ducky/custom_duck.weights")).reshape(18 * 17, 1)
+        target_ctrl_pts = torch.from_numpy(np.concatenate([ctrlpts,weights],axis=-1)).view(1, 18, 17, 4)
+        target_eval_layer = SurfEvalBS(18, 17, knot_u=knot_u, knot_v=knot_v, dimension=3, p=3, q=3, out_dim_u=resolution, out_dim_v=resolution)
+        target = target_eval_layer(target_ctrl_pts).float().cuda()
+
     # other off files test
     ####################################
+    else:
+        with open(gt_path + '_' + str(resolution * resolution) + '.off', 'r') as f:
+            lines = f.readlines()
 
-    with open(gt_path + '_' + str(resolution * resolution) + '.off', 'r') as f:
-        lines = f.readlines()
-
-        # skip the first line
-        lines = lines[2:]
-        lines = random.sample(lines, k=resolution * resolution)
-        # extract vertex positions
-        vertex_positions = []
-        for line in lines:
-            x, y, z = map(float, line.split()[:3])
-            min_coord = min(min_coord, x, y, z)
-            max_coord = max(max_coord, x, y, z)
-            vertex_positions.append((x, y, z))
-        range_coord = max(abs(min_coord), abs(max_coord)) / 1
-        # range_coord = 1
-        vertex_positions = [(x/range_coord, y/range_coord, z/range_coord) for x, y, z in vertex_positions]
-        target = torch.tensor(vertex_positions).reshape(1, resolution, resolution, 3).float().cuda()
+            # skip the first line
+            lines = lines[2:]
+            lines = random.sample(lines, k=resolution * resolution)
+            # extract vertex positions
+            vertex_positions = []
+            for line in lines:
+                x, y, z = map(float, line.split()[:3])
+                min_coord = min(min_coord, x, y, z)
+                max_coord = max(max_coord, x, y, z)
+                vertex_positions.append((x, y, z))
+            # range_coord = max(abs(min_coord), abs(max_coord)) / 1
+            range_coord = 1
+            vertex_positions = [(x/range_coord, y/range_coord, z/range_coord) for x, y, z in vertex_positions]
+            target = torch.tensor(vertex_positions).reshape(1, resolution, resolution, 3).float().cuda()
     ##########################################
 
     # with open(gt_path, 'r') as f:
@@ -368,8 +389,8 @@ def main(config):
     # target = torch.tensor(vertex_positions).reshape(1, num_eval_pts_u, num_eval_pts_v, 3).float().cuda()
 
 
-    num_ctrl_pts1 = ctr_pts
-    num_ctrl_pts2 = ctr_pts
+    num_ctrl_pts1 = 7
+    num_ctrl_pts2 = 9
     num_eval_pts_u = resolution
     num_eval_pts_v = resolution
 
@@ -378,7 +399,7 @@ def main(config):
     # print(target.shape)
     # PTS = target.detach().numpy().squeeze()
     # Max_size = off.Max_size(np.reshape(PTS, [1, num_eval_pts_u * num_eval_pts_v, 3]))
-    inp_ctrl_pts = torch.nn.Parameter(torch.tensor(generate_cylinder(vertex_positions, ctr_pts, ctr_pts, axis='y', object_name=object_name), requires_grad=True).reshape(1, ctr_pts, ctr_pts,3).float().cuda())
+    inp_ctrl_pts = torch.nn.Parameter(torch.rand((1,num_ctrl_pts1,num_ctrl_pts2,3), requires_grad=True).float().cuda())
 
 
     knot_int_u = torch.nn.Parameter(torch.ones(num_ctrl_pts1+p+1-2*p-1).unsqueeze(0).cuda(), requires_grad=True)
@@ -387,19 +408,15 @@ def main(config):
     weights = torch.nn.Parameter(torch.ones((1,num_ctrl_pts1,num_ctrl_pts2,1), requires_grad=True).float().cuda())
 
     # print(target.shape)
-    layer = SurfEval(num_ctrl_pts1, num_ctrl_pts2, dimension=3, p=p, q=q, out_dim_u=sampled_size, out_dim_v=sampled_size, method='tc', dvc='cuda').cuda()
+    layer = SurfEval(num_ctrl_pts1, num_ctrl_pts2, dimension=3, p=p, q=q, out_dim_u=num_eval_pts_u, out_dim_v=num_eval_pts_v, method='tc', dvc='cuda').cuda()
     opt1 = torch.optim.Adam(iter([inp_ctrl_pts, weights]), lr=0.5) 
-    # print(inp_ctrl_pts)
-    # opt2 = torch.optim.Adam(iter([knot_int_u, knot_int_v]), lr=1e-2)
-    lr_schedule1 = torch.optim.lr_scheduler.ReduceLROnPlateau(opt1, patience=10, factor=0.5, verbose=True, min_lr=1e-4, 
-                                                              eps=1e-08, threshold=1e-4, threshold_mode='rel', cooldown=0,
-                                                              )
-    # lr_schedule2 = torch.optim.lr_scheduler.ReduceLROnPlateau(opt2, patience=3)
+    opt2 = torch.optim.Adam(iter([knot_int_u, knot_int_v]), lr=1e-2)
+    lr_schedule1 = torch.optim.lr_scheduler.ReduceLROnPlateau(opt1, patience=3)
+    lr_schedule2 = torch.optim.lr_scheduler.ReduceLROnPlateau(opt2, patience=3)
     pbar = tqdm(range(num_epochs))
+    colors = generate_gradient('#ff0000', '#00ff00', (num_ctrl_pts1 - 3) * (num_ctrl_pts2 - 3) // 2) + generate_gradient('#00ff00', '#0000ff', (num_ctrl_pts1 - 3) * (num_ctrl_pts2 - 3) // 2)
     fig = plt.figure(figsize=(15, 9))
     time1 = time.time()
-    chamfer = 0
-    hausdorff = 0
     for i in pbar:
         # torch.cuda.empty_cache()
         knot_rep_p_0 = torch.zeros(1,p+1).cuda()
@@ -410,7 +427,7 @@ def main(config):
 
         def closure():
             opt1.zero_grad()
-            # opt2.zero_grad()
+            opt2.zero_grad()
             # out = layer(inp_ctrl_pts)
             out = layer((torch.cat((inp_ctrl_pts,weights), -1), torch.cat((knot_rep_p_0,knot_int_u,knot_rep_p_1), -1), torch.cat((knot_rep_q_0,knot_int_v,knot_rep_q_1), -1)))
 
@@ -419,20 +436,10 @@ def main(config):
            
 
             if ignore_uv:
-                lap = 0.001 * laplacian_loss_unsupervised(out)
-                out = out.reshape(1, sampled_size*sampled_size, 3)
+                out = out.reshape(1, num_eval_pts_u*num_eval_pts_v, 3)
                 tgt = target.reshape(1, num_eval_pts_u*num_eval_pts_v, 3)
                 if loss_type == 'chamfer':
-                    chamfer = chamfer_distance(out, tgt)
-                    hausdorff = hausdorff_distance(out, tgt)
-                    # if i == num_epochs - 1:
-                    print(1000 * lap.item())
-                    print(chamfer.item())
-                    print(hausdorff.item())
-                    loss += chamfer_distance(out, tgt) + 0.01 * hausdorff_distance(out, tgt) + lap
-                    # + lap
-                    # + 0.001 * laplacian_loss_unsupervised(out)
-                    # print(loss)
+                    loss += chamfer_distance(out, tgt)
                 elif loss_type == 'mse':
                     loss += ((out - tgt) ** 2).mean()
             else:
@@ -447,24 +454,23 @@ def main(config):
             loss.backward(retain_graph=True)
             return loss
 
-        # if (i%300) < 30:
-        loss = opt1.step(closure)
-        lr_schedule1.step(loss)
-        # else:
-        #     loss = opt2.step(closure)        
+        if (i%300) < 30:
+            loss = opt1.step(closure)
+        else:
+            loss = opt2.step(closure)        
 
 
         out = layer((torch.cat((inp_ctrl_pts,weights), -1), torch.cat((knot_rep_p_0,knot_int_u,knot_rep_p_1), -1), torch.cat((knot_rep_q_0,knot_int_v,knot_rep_q_1), -1)))
         # target = target.reshape(1,num_eval_pts_u,num_eval_pts_v,3)
         # out = out.reshape(1,num_eval_pts_u,num_eval_pts_v,3)
         
-        if loss.item() < 1e-6:
+        if loss.item() < 1e-4:
             print((time.time() - time1)/ (i + 1)) 
             break
         
         pbar.set_description("Loss %s: %s" % (i+1, loss.item()))
 
-    print((time.time() - time1)/ (num_epochs)) 
+    print((time.time() - time1)/ (3000)) 
 
     train_uspan_uv, train_vspan_uv = layer.getuvspan()
     # target_uspan_uv, target_vspan_uv = layer.getuvsapn()
@@ -490,14 +496,14 @@ def main(config):
     with open('generated/u_test.cpt', 'w') as f:
         # Loop over the array rows
         x = predictedctrlpts
-        x = x.reshape(ctr_pts, ctr_pts, 3)
+        x = x.reshape(ctr_pts, 9, 3)
         
         for i in range(ctr_pts):
-            for j in range(ctr_pts):
+            for j in range(9):
                 # print(predicted_target[i, j, :])
                 line = str(x[i, j, 0]) + ',' + str(x[i, j, 1]) + ',' + str(x[i, j, 2])
                 f.write(line)
-                if (j == ctr_pts - 1):
+                if (j == 9 - 1):
                     f.write('\n')
                 else:
                     f.write(';')
@@ -596,19 +602,19 @@ def main(config):
     adjust_plot(ax4)
 
     target_mpl = target_mpl.reshape(resolution, resolution, 3)
-    predicted = predicted.reshape(sampled_size, sampled_size, 3)
+    predicted = predicted.reshape(resolution, resolution, 3)
     ax5 = fig.add_subplot(155, adjustable='box')
-    # error_map = (((predicted - target_mpl) ** 2) / target_mpl).sum(-1)
+    error_map = (((predicted - target_mpl) ** 2) / target_mpl).sum(-1)
 
-    # im5 = ax5.imshow(error_map, cmap='jet', interpolation='none', extent=[0, 128, 0, 128], vmin=-0.001, vmax=0.001)
+    im5 = ax5.imshow(error_map, cmap='jet', interpolation='none', extent=[0, 128, 0, 128], vmin=-0.001, vmax=0.001)
     # fig.colorbar(im4, shrink=0.4, aspect=5)
-    # fig.colorbar(im5, shrink=0.4, aspect=5, ticks=[-0.001, 0, 0.001])
-    # ax5.set_xlabel('$u$')
-    # ax5.set_ylabel('$v$')
-    # x_positions = np.arange(0, 128, 20)  # pixel count at label position
-    # plt.xticks(x_positions, x_positions)
-    # plt.yticks(x_positions, x_positions)
-    # ax5.set_aspect(1)
+    fig.colorbar(im5, shrink=0.4, aspect=5, ticks=[-0.001, 0, 0.001])
+    ax5.set_xlabel('$u$')
+    ax5.set_ylabel('$v$')
+    x_positions = np.arange(0, 128, 20)  # pixel count at label position
+    plt.xticks(x_positions, x_positions)
+    plt.yticks(x_positions, x_positions)
+    ax5.set_aspect(1)
 
     # ax5 = fig.add_subplot(235, projection='3d', adjustable='box')
     # plot_diff_subfigure(target_mpl - predicted, ax5)
@@ -666,3 +672,6 @@ if __name__ == '__main__':
     main(config)
 
 
+
+
+    

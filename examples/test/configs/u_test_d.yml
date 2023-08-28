@@ -6,7 +6,7 @@ comment=""
 
 # GT point cloud path
 # gt_pc = "../Ducky/duck1.obj"
-gt_pc = "../../meshes/duck1"
+gt_pc = "../../meshes/cylinder"
 # gt_pc = "../../meshes/sampled/sphere"
 # gt_pc = "../../meshes/duck_pc_possion"
 
@@ -23,12 +23,11 @@ loss_weight = 0.9
 
 batch_size = 36
 
-num_epochs = 500
+num_epochs = 1000
 
 # number of control points used on u, v
 ctrpts_size = 15
-ctrlpts_size_u = 15
-ctrlpts_size_v = 15
+
 # base function degree
 degree = 3
 
@@ -44,7 +43,7 @@ optim = adam
 accum = 4
 
 # Learing rate
-lr1 = 0.001
+lr1 = 0.1
 lr2 = 0.001
 # Whether to schedule the learning rate or not
 lr_sch = True

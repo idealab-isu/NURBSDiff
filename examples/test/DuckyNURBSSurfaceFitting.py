@@ -278,7 +278,8 @@ def main():
         target = target.reshape(1,num_eval_pts_u,num_eval_pts_v,3)
         out = out.reshape(1,num_eval_pts_u,num_eval_pts_v,3)
         
-
+        print(knot_int_u)
+        print(knot_int_v)
         
         pbar.set_description("Loss %s: %s" % (i+1, loss.item()))
 

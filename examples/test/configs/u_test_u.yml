@@ -23,12 +23,17 @@ loss_weight = 0.9
 
 batch_size = 36
 
-num_epochs = 500
+num_epochs = 1000
+
+axis = y
 
 # number of control points used on u, v
-ctrpts_size = 15
-ctrlpts_size_u = 15
-ctrlpts_size_v = 15
+ctrpts_size = 30
+
+ctrlpts_size_u = 30
+
+ctrlpts_size_v = 30
+
 # base function degree
 degree = 3
 
@@ -44,7 +49,7 @@ optim = adam
 accum = 4
 
 # Learing rate
-lr1 = 0.001
+lr1 = 0.1
 lr2 = 0.001
 # Whether to schedule the learning rate or not
 lr_sch = True
@@ -55,8 +60,7 @@ patience = 8
 mode = 0
 
 # chamfer | mse
-loss_type = chamfer
+loss_type = pp
 
 ignore_uv = True
 
-axis = y

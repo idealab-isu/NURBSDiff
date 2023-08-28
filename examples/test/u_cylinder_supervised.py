@@ -1,10 +1,6 @@
 import torch
 import numpy as np
 
-# from examples.test.u_test_u import laplacian_loss_unsupervised
-
-# from examples.test.u_test_u_reverse import chamfer_distance
-
 torch.manual_seed(120)
 from tqdm import tqdm
 # from pytorch3d.loss import chamfer_distance
@@ -16,8 +12,6 @@ from matplotlib import cm
 from geomdl import exchange
 from geomdl.visualization import VisMPL
 from geomdl import compatibility, utilities
-from torch.autograd.variable import Variable
-import torch.nn.functional as F
 # import offset_eval as off
 
 SMALL_SIZE = 12
@@ -35,71 +29,6 @@ plt.rc('legend', fontsize=SMALL_SIZE)    # legend fontsize
 plt.rc('figure', titlesize=BIGGER_SIZE)  # fontsize of the figure title
 
 
-def laplacian_loss_splinenet(output, gt, dist_type="l2"):
-    filter = ([[[0.0, 0.25, 0.0], [0.25, -1.0, 0.25], [0.0, 0.25, 0.0]],
-               [[0, 0, 0], [0, 0, 0], [0, 0, 0]],
-               [[0, 0, 0], [0, 0, 0], [0, 0, 0]]])
-    filter = np.stack([filter, np.roll(filter, 1, 0), np.roll(filter, 2, 0)])
-
-    filter = -np.array(filter, dtype=np.float32)
-    filter = Variable(torch.from_numpy(filter)).cuda().float()
-
-    laplacian_output = F.conv2d(output.permute(0, 3, 1, 2), filter, padding=1)
-    laplacian_input = F.conv2d(gt.permute(0, 3, 1, 2), filter, padding=1)
-    if dist_type == "l2":
-        dist = (laplacian_output - laplacian_input) ** 2
-    elif dist_type == "l1":
-        dist = torch.abs(laplacian_output - laplacian_input)
-    dist = torch.sum(dist, 1)
-    dist = torch.mean(dist)
-    return dist
-
-def chamfer_distance(pred, gt, sqrt=False):
-    """
-    Computes average chamfer distance prediction and groundtruth
-    :param pred: Prediction: B x M x N x 3
-    :param gt: ground truth: B x M x N x 3
-    :return:
-    """
-    # print(pred.shape)
-    if isinstance(pred, np.ndarray):
-        pred = Variable(torch.from_numpy(pred.astype(np.float32))).cuda()
-
-    if isinstance(gt, np.ndarray):
-        gt = Variable(torch.from_numpy(gt.astype(np.float32))).cuda()
-
-    pred = torch.unsqueeze(pred, 1)
-    gt = torch.unsqueeze(gt, 2)
-
-    diff = pred - gt
-    diff = torch.sum(diff ** 2, 3)
-    if sqrt:
-        diff = guard_sqrt(diff)
-
-    cd = torch.mean(torch.min(diff, 1)[0], 1) + torch.mean(torch.min(diff, 2)[0], 1)
-    cd = torch.mean(cd) / 2.0
-    return cd
-
-def hausdorff_distance(pred, gt):
-    """
-    Computes the Hausdorff Distance between two point clouds
-    :param pred: Prediction: B x N x 3
-    :param gt: ground truth: B x M x 3
-    :return: Hausdorff Distance
-    """
-    batch_size = pred.shape[0]
-    pred = torch.unsqueeze(pred, 1)  # B x 1 x N x 3
-    gt = torch.unsqueeze(gt, 2)  # B x M x 1 x 3
-    # print(pred.shape, gt.shape)
-    dist_matrix = torch.sqrt(torch.sum((pred - gt) ** 2, dim=3))  # B x M x N
-
-    row_max, _ = torch.max(torch.min(dist_matrix, dim=2)[0], dim=1)
-    col_max, _ = torch.max(torch.min(dist_matrix, dim=1)[0], dim=1)
-
-    hd = torch.max(row_max, col_max)
-    hd = torch.mean(hd)
-    return hd
-
 def read_weights(filename, sep=","):
     try:
         with open(filename, "r") as fp:
@@ -112,28 +41,19 @@ def read_weights(filename, sep=","):
 
 def main():
     timing = []
-
-    obj_name = 'ducky'
-
-    num_ctrl_pts1 = 14 if obj_name == 'ducky' else 18
-    num_ctrl_pts2 = 13 if obj_name == 'ducky' else 17
+    
+    obj_name = "cylinder"
+    
+    num_ctrl_pts1 = 7
+    num_ctrl_pts2 = 9
     num_eval_pts_u = 64
     num_eval_pts_v = 64
     # inp_ctrl_pts = torch.nn.Parameter(torch.rand(1,num_ctrl_pts1, num_ctrl_pts2, 3))
-    if obj_name == 'ducky':
-        knot_u = np.array([-1.5708, -1.5708, -1.5708, -1.5708, -1.0472, -0.523599, 0, 0.523599, 0.808217,
-                                1.04015, 1.0472, 1.24824, 1.29714, 1.46148, 1.5708, 1.5708, 1.5708, 1.5708])
-        knot_u = (knot_u - knot_u.min())/(knot_u.max()-knot_u.min())
-        knot_v = np.array([-3.14159, -3.14159, -3.14159, -3.14159, -2.61799, -2.0944, -1.0472, -0.523599,
-                                6.66134e-016, 0.523599, 1.0472, 2.0944, 2.61799, 3.14159, 3.14159, 3.14159, 3.14159])
-        knot_v = (knot_v - knot_v.min())/(knot_v.max()-knot_v.min())
-        ctrlpts = np.array(exchange.import_txt("../Ducky/duck1.ctrlpts", separator=" "))
-        weights = np.array(read_weights("../Ducky/duck1.weights")).reshape(num_ctrl_pts1 * num_ctrl_pts2,1)
-    else:
-        knot_u = utilities.generate_knot_vector(3, 18)
-        knot_v = utilities.generate_knot_vector(3, 17)
-        ctrlpts = np.array(exchange.import_txt("../Ducky/custom_duck.ctrlpts", separator=" "))
-        weights = np.array(read_weights("../Ducky/custom_duck.weights")).reshape(18 * 17, 1)
+
+    knot_u = utilities.generate_knot_vector(3, 7)
+    knot_v = utilities.generate_knot_vector(3, 9)
+    ctrlpts = np.array(exchange.import_txt("u_cylinder_7x9.ctrlpts", separator=" "))
+    weights = np.ones((7 * 9, 1))
 
     target_ctrl_pts = torch.from_numpy(np.concatenate([ctrlpts,weights],axis=-1)).view(1,num_ctrl_pts1,num_ctrl_pts2,4)
     target_eval_layer = SurfEvalBS(num_ctrl_pts1, num_ctrl_pts2, knot_u=knot_u, knot_v=knot_v, dimension=3, p=3, q=3, out_dim_u=num_eval_pts_u, out_dim_v=num_eval_pts_v)
@@ -154,14 +74,14 @@ def main():
     layer = SurfEval(num_ctrl_pts1, num_ctrl_pts2, dimension=3, p=3, q=3, out_dim_u=num_eval_pts_u, out_dim_v=num_eval_pts_v, method='tc', dvc='cuda').cuda()
     opt1 = torch.optim.LBFGS(iter([inp_ctrl_pts, weights]), lr=0.5, max_iter=3)
     opt2 = torch.optim.SGD(iter([knot_int_u, knot_int_v]), lr=1e-3)
-    pbar = tqdm(range(1000))
+    pbar = tqdm(range(3000))
 
     with open(f'generated/{obj_name}/{obj_name}_gt_ctrpts.OFF', 'w') as f:
         # Loop over the array rows
         f.write('OFF\n')
         f.write(str(num_ctrl_pts1 * num_ctrl_pts2) + ' ' + '0 0\n')
         for i in range(num_ctrl_pts1 * num_ctrl_pts2):
-            line = str(ctrlpts[i, 0]) + ' ' + str(ctrlpts[i, 1]) + ' ' + str(ctrlpts[i, 2]) + '\n'
+            line = str(ctrlpts[i][0]) + ' ' + str(ctrlpts[i][1]) + ' ' + str(ctrlpts[i][2]) + '\n'
             f.write(line)
     
     with open(f'generated/{obj_name}/{obj_name}_predicted_init_ctrpts.OFF', 'w') as f:
@@ -186,8 +106,8 @@ def main():
             opt2.zero_grad()
             # out = layer(inp_ctrl_pts)
             out = layer((torch.cat((inp_ctrl_pts,weights), -1), torch.cat((knot_rep_p_0,knot_int_u,knot_rep_p_1), -1), torch.cat((knot_rep_q_0,knot_int_v,knot_rep_q_1), -1)))
-            loss = ((target-out)**2).mean() + 0.01 * chamfer_distance(target,out) + 0.001 * hausdorff_distance(target,out) + 0.1 * laplacian_loss_splinenet(out, target, dist_type="l2")
-# laplacian_loss_unsupervised
+            loss = ((target-out)**2).mean()
+
             # out = out.reshape(1, num_eval_pts_u*num_eval_pts_v, 3)
             # tgt = target.reshape(1, num_eval_pts_u*num_eval_pts_v, 3)
             # loss = chamfer_distance(out,tgt)
@@ -296,7 +216,7 @@ def main():
     # finally we invoke the legend (that you probably would like to customize...)
 
     fig.legend(lines, labels, ncol=2, loc='lower center', bbox_to_anchor=(0.33, 0.0), )
-    plt.savefig('ducky_reparameterization.pdf') 
+    plt.savefig('cylinder_reparameterization.pdf') 
     plt.show()
 
     # layer_2 = SurfEval(num_ctrl_pts1, num_ctrl_pts2, knot_u=knot_u, knot_v=knot_v, dimension=3, p=3, q=3,
