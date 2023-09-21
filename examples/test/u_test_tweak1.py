@@ -5,6 +5,7 @@ import numpy as np
 
 from DuckyFittingOriginal import read_weights
 from examples.test.u_test import laplacian_loss, laplacian_loss_unsupervised
+from examples.test.u_test_u_reverse import compute_edge_lengths
 torch.manual_seed(120)
 from tqdm import tqdm
 # from pytorch3d.loss import chamfer_distance
@@ -275,6 +276,7 @@ def main(config):
     loss_type = config.loss_type
     ignore_uv = config.ignore_uv
 
+    sample_size = 100
     # num_epochs = 1
     iteration = 0
 
@@ -334,19 +336,24 @@ def main(config):
         
     
     # print(target.shape)
-    layer = SurfEval(num_ctrl_pts1, num_ctrl_pts2, dimension=3, p=p, q=q, out_dim_u=num_eval_pts_u, out_dim_v=num_eval_pts_v, method='tc', dvc='cuda').cuda()
+    layer_l2 = SurfEval(num_ctrl_pts1, num_ctrl_pts2, dimension=3, p=p, q=q, out_dim_u=num_eval_pts_u, out_dim_v=num_eval_pts_v, method='tc', dvc='cuda').cuda()
+    layer_chamfer = SurfEval(num_ctrl_pts1, num_ctrl_pts2, dimension=3, p=p, q=q, out_dim_u=sample_size, out_dim_v=sample_size, method='tc', dvc='cuda').cuda()
     opt1 = torch.optim.Adam([inp_ctrl_pts], lr=0.5) 
     opt1_lower_lr = torch.optim.Adam([inp_ctrl_pts], lr=0.01)
     opt2 = torch.optim.Adam(iter([knot_int_u, knot_int_v]), lr=1e-2)
-    lr_schedule1 = torch.optim.lr_scheduler.ReduceLROnPlateau(opt1, patience=10, factor=0.5, verbose=True, min_lr=1e-4, 
-                                                            eps=1e-08, threshold=1e-4, threshold_mode='rel', cooldown=0,
-                                                            )
+    # lr_schedule1 = torch.optim.lr_scheduler.ReduceLROnPlateau(opt1, patience=10, factor=0.5, verbose=True, min_lr=1e-4, 
+    #                                                         eps=1e-08, threshold=1e-4, threshold_mode='rel', cooldown=0,
+    #                                                         )
     # lr_schedule2 = torch.optim.lr_scheduler.ReduceLROnPlateau(opt2, patience=3)
     
 
-    for j in range(51):
-        opt1 = torch.optim.Adam([inp_ctrl_pts], lr=0.1) 
-        pbar = tqdm(range(num_epochs * 2 if j % 2 else num_epochs))
+    for j in range(3):
+        opt1 = torch.optim.Adam([inp_ctrl_pts], lr=0.5) 
+        lr_schedule1 = torch.optim.lr_scheduler.ReduceLROnPlateau(opt1, patience=10, factor=0.5, verbose=True, min_lr=1e-4, 
+                                                              eps=1e-08, threshold=1e-4, threshold_mode='rel', cooldown=0,
+                                                              )
+        # pbar = tqdm(range(num_epochs * 2 if j % 2 else num_epochs))
+        pbar = tqdm(range(num_epochs))
         for i in pbar:
             # torch.cuda.empty_cache()
             knot_rep_p_0 = torch.zeros(1,p+1).cuda()
@@ -357,22 +364,26 @@ def main(config):
             def closure():
                 opt1.zero_grad()
                 # opt2.zero_grad()
-                out = layer((torch.cat((inp_ctrl_pts,weights), -1), torch.cat((knot_rep_p_0,knot_int_u,knot_rep_p_1), -1), torch.cat((knot_rep_q_0,knot_int_v,knot_rep_q_1), -1)))
+                if iteration % 2 == 0:
+                    out = layer_chamfer((torch.cat((inp_ctrl_pts,weights), -1), torch.cat((knot_rep_p_0,knot_int_u,knot_rep_p_1), -1), torch.cat((knot_rep_q_0,knot_int_v,knot_rep_q_1), -1)))
+                else:
+                    out = layer_l2((torch.cat((inp_ctrl_pts,weights), -1), torch.cat((knot_rep_p_0,knot_int_u,knot_rep_p_1), -1), torch.cat((knot_rep_q_0,knot_int_v,knot_rep_q_1), -1)))
 
                 loss = 0
                 # loss += 0.001 * laplacian_loss(out, target)
             
 
                 if ignore_uv:
-                    lap = 0.001 * laplacian_loss_unsupervised(out)
-                    out = out.reshape(1, num_eval_pts_u*num_eval_pts_v, 3)
-                    tgt = target.reshape(1, num_eval_pts_u*num_eval_pts_v, 3)
+                    lap = 0.1 * laplacian_loss_unsupervised(inp_ctrl_pts)
+                    out = out.reshape(1, -1, 3)
+                    tgt = target.reshape(1, -1, 3)
                     if iteration % 2 == 0:
                         chamfer = chamfer_distance(out, tgt)
-                        print(1000 * lap.item())
-                        print(chamfer.item())
+                        # print(1000 * lap.item())
+                        # print(chamfer.item())
                         # print(hausdorff.item())
-                        loss += chamfer + lap
+                        loss += chamfer + lap 
+                        # + 0.001 * compute_edge_lengths(inp_ctrl_pts, num_ctrl_pts1, num_ctrl_pts2)
                     elif iteration % 2 == 1:
                         loss += ((out - tgt) ** 2).mean()
                 else:
@@ -389,17 +400,18 @@ def main(config):
             
             if loss.item() < 1e-6:
                 break
-            out = layer((torch.cat((inp_ctrl_pts, weights), -1), torch.cat((knot_rep_p_0, knot_int_u, knot_rep_p_1), -1), torch.cat((knot_rep_q_0, knot_int_v, knot_rep_q_1), -1)))
+            out = layer_l2((torch.cat((inp_ctrl_pts, weights), -1), torch.cat((knot_rep_p_0, knot_int_u, knot_rep_p_1), -1), torch.cat((knot_rep_q_0, knot_int_v, knot_rep_q_1), -1)))
             pbar.set_description("Loss %s: %s" % (i+1, loss.item()))
             
         
         
         # print((time.time() - time1)/ (3000)) 
-        tgt = target.detach().cpu().numpy().reshape(-1, 3)
-        _, col_ind = find_matching(out.detach().cpu().numpy().reshape(-1, 3), tgt)
-        print(col_ind)
-        tgt = tgt[col_ind]
-        target = target.reshape(1, resolution, resolution, 3).float().cuda()
+        if iteration % 2 == 0:
+            tgt = target.detach().cpu().numpy().reshape(-1, 3)
+            _, col_ind = find_matching(out.detach().cpu().numpy().reshape(-1, 3), tgt)
+            print(col_ind)
+            tgt = tgt[col_ind]
+            target = torch.tensor(tgt).reshape(1, resolution, resolution, 3).float().cuda()
         
         
         inter_layer = SurfEval(num_ctrl_pts1, num_ctrl_pts2, dimension=3, p=p, q=q, out_dim_u=out_dim, out_dim_v=out_dim, method='tc', dvc='cuda').cuda()
@@ -410,16 +422,27 @@ def main(config):
         out2 = inter_layer((torch.cat((inp_ctrl_pts,weights), -1), torch.cat((knot_rep_p_0,knot_int_u,knot_rep_p_1), -1), torch.cat((knot_rep_q_0,knot_int_v,knot_rep_q_1), -1)))
         out2 = out2.detach().cpu().numpy().squeeze(0).reshape(out_dim, out_dim, 3)
         
-        if iteration % 2 == 0:
-            with open(f'generated/u_{object_name}_ctrpts_{ctr_pts}_eval_{resolution}_reconstruct_{out_dim}_first.OFF', 'w') as f:
-                # Loop over the array rows
-                f.write('OFF\n')
-                f.write(str(out_dim * out_dim) + ' ' + '0 0\n')
-                for i in range(out_dim):
-                    for j in range(out_dim):
-                        # print(predicted_target[i, j, :])
-                        line = str(out2[i, j, 0]) + ' ' + str(out2[i, j, 1]) + ' ' + str(out2[i, j, 2]) + '\n'
-                        f.write(line)
+ 
+        with open(f'generated/u_{object_name}_ctrpts_{ctr_pts}_eval_{resolution}_reconstruct_{out_dim}_first.OFF', 'w') as f:
+            # Loop over the array rows
+            f.write('OFF\n')
+            f.write(str(out_dim * out_dim) + ' ' + '0 0\n')
+            for i in range(out_dim):
+                for j in range(out_dim):
+                    # print(predicted_target[i, j, :])
+                    line = str(out2[i, j, 0]) + ' ' + str(out2[i, j, 1]) + ' ' + str(out2[i, j, 2]) + '\n'
+                    f.write(line)
+        with open(f'generated/u_{object_name}_predicted_{ctr_pts}_eval_{resolution}_reconstruct_{out_dim}.OFF', 'w') as f:
+            f.write('OFF\n')
+            f.write(str(ctr_pts * ctr_pts) + ' ' + '0 0\n')
+            # Loop over the array rows
+            x = inp_ctrl_pts.detach().cpu().numpy().squeeze(0)
+            x = x.reshape(-1, 3)
+            for i in range(ctr_pts):
+                for j in range(ctr_pts):
+                    # print(predicted_target[i, j, :])
+                    line = str(x[i*ctr_pts + j, 0]) + ' ' + str(x[i*ctr_pts + j, 1]) + ' ' + str(x[i*ctr_pts + j, 2]) + '\n'
+                    f.write(line)
     
         iteration += 1
 
@@ -560,7 +583,7 @@ def main(config):
 
     im5 = ax5.imshow(error_map, cmap='jet', interpolation='none', extent=[0, 128, 0, 128], vmin=-0.001, vmax=0.001)
     # fig.colorbar(im4, shrink=0.4, aspect=5)
-    fig.colorbar(im5, shrink=0.4, aspect=5, ticks=[-0.001, 0, 0.001])
+    fig.colorbar(im5, shrink=0.4, aspect=5, ticks=[-0.5, 0, 0.5])
     ax5.set_xlabel('$u$')
     ax5.set_ylabel('$v$')
     x_positions = np.arange(0, 128, 20)  # pixel count at label position

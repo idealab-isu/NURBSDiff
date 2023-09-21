@@ -2,7 +2,7 @@ import torch
 import numpy as np
 
 from examples.surface_fitting import chamfer_distance_two_side
-from examples.test.u_test import hausdorff_distance
+# from examples.test.u_test import hausdorff_distance
 torch.manual_seed(120)
 from tqdm import tqdm
 # from pytorch3d.loss import chamfer_distance
@@ -110,7 +110,9 @@ def main():
             opt2.zero_grad()
             # out = layer(inp_ctrl_pts)
             out = layer((torch.cat((inp_ctrl_pts,weights), -1), torch.cat((knot_rep_p_0,knot_int_u,knot_rep_p_1), -1), torch.cat((knot_rep_q_0,knot_int_v,knot_rep_q_1), -1)))
-            loss = ((target-out)**2).mean() + chamfer_distance_two_side(out, target) + 10 * hausdorff_distance(out, target) 
+            loss = ((target-out)**2).mean() 
+            # + chamfer_distance_two_side(out, target)
+            # + 10 * hausdorff_distance(out, target) 
             # + 0.1 * laplacian_smoothing(inp_ctrl_pts)
 
             # out = out.reshape(1, num_eval_pts_u*num_eval_pts_v, 3)

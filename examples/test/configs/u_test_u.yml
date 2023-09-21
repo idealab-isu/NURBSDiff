@@ -6,7 +6,7 @@ comment=""
 
 # GT point cloud path
 # gt_pc = "../Ducky/duck1.obj"
-gt_pc = "../../meshes/duck1"
+gt_pc = "../../meshes/horse"
 # gt_pc = "../../meshes/sampled/sphere"
 # gt_pc = "../../meshes/duck_pc_possion"
 
@@ -28,17 +28,17 @@ num_epochs = 1000
 axis = y
 
 # number of control points used on u, v
-ctrpts_size = 30
+ctrpts_size = 20
 
-ctrlpts_size_u = 30
+ctrlpts_size_u = 20
 
-ctrlpts_size_v = 30
+ctrlpts_size_v = 20
 
 # base function degree
 degree = 3
 
 # resolution on u, v
-resolution = 30
+resolution = 50
 
 # reconsted surface on prediction
 out_dim = 64

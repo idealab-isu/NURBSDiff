@@ -6,7 +6,7 @@ comment=""
 
 # GT point cloud path
 # gt_pc = "../Ducky/duck1.obj"
-gt_pc = "../../meshes/duck1"
+gt_pc = "../../meshes/cat"
 # gt_pc = "../../meshes/sampled/sphere"
 # gt_pc = "../../meshes/duck_pc_possion"
 

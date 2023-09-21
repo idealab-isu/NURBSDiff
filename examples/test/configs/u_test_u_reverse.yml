@@ -6,7 +6,7 @@ comment=""
 
 # GT point cloud path
 # gt_pc = "../Ducky/duck1.obj"
-gt_pc = "../../meshes/duck1"
+gt_pc = "../../meshes/duck1_sorted"
 # gt_pc = "../../meshes/sampled/sphere"
 # gt_pc = "../../meshes/duck_pc_possion"
 
@@ -17,7 +17,7 @@ gt_pc = "../../meshes/duck1"
 normals = False
 
 # number of sampled points
-num_points = 3600
+num_points = 1
 
 loss_weight = 0.9
 
@@ -41,7 +41,7 @@ degree = 3
 resolution = 30
 
 # reconstruct surface on prediction
-out_dim = 40
+out_dim = 30
 
 # optimzer
 optim = adam

@@ -4,6 +4,7 @@ import torch
 import numpy as np
 
 from DuckyFittingOriginal import read_weights
+from examples.test.u_test_u_reverse import generate_cylinder
 torch.manual_seed(120)
 from tqdm import tqdm
 # from pytorch3d.loss import chamfer_distance
@@ -157,6 +158,29 @@ def point_surface_distance_tensor(point, surface):
 
     # Return the minimum distance and the corresponding parameter values (u, v)
     return torch.tensor(result.fun), result.x
+
+def laplacian_loss_unsupervised(output, dist_type="l2"):
+    filter = ([[[0.0, 0.25, 0.0], [0.25, -1.0, 0.25], [0.0, 0.25, 0.0]],
+               [[0, 0, 0], [0, 0, 0], [0, 0, 0]],
+               [[0, 0, 0], [0, 0, 0], [0, 0, 0]]])
+
+    filter = np.stack([filter, np.roll(filter, 1, 0), np.roll(filter, 2, 0)])
+
+    filter = -np.array(filter, dtype=np.float32)
+    filter = Variable(torch.from_numpy(filter)).cuda()
+    # print(output.shape)
+    laplacian_output = F.conv2d(output.permute(0, 3, 1, 2), filter, padding=1)
+
+    if dist_type == "l2":
+        dist = torch.sum((laplacian_output) ** 2, (1,2,3)) 
+        # dist = torch.sum((laplacian_output) ** 2, (1,2,3)) + torch.sum((laplacian_input)**2,(1,2,3))
+    elif dist_type == "l1":
+        dist = torch.abs(torch.sum(laplacian_output.mean(),1))
+    dist = torch.mean(dist)
+
+    return dist
+
+
 def main(config):
  
     gt_path = config.gt_pc
@@ -234,24 +258,24 @@ def main(config):
 
     # other off files test
     ####################################
-    else:
-        with open(gt_path + '_' + str(resolution * resolution) + '.off', 'r') as f:
-            lines = f.readlines()
+    # else:
+    with open(gt_path + '_' + str(resolution * resolution) + '.off', 'r') as f:
+        lines = f.readlines()
 
-            # skip the first line
-            lines = lines[2:]
-            lines = random.sample(lines, k=resolution * resolution)
-            # extract vertex positions
-            vertex_positions = []
-            for line in lines:
-                x, y, z = map(float, line.split()[:3])
-                min_coord = min(min_coord, x, y, z)
-                max_coord = max(max_coord, x, y, z)
-                vertex_positions.append((x, y, z))
-            range_coord = max(abs(min_coord), abs(max_coord)) / 1
-            # range_coord = 1
-            vertex_positions = [(x/range_coord, y/range_coord, z/range_coord) for x, y, z in vertex_positions]
-            target = torch.tensor(vertex_positions).reshape(1, resolution, resolution, 3).float().cuda()
+        # skip the first line
+        lines = lines[2:]
+        lines = random.sample(lines, k=resolution * resolution)
+        # extract vertex positions
+        vertex_positions = []
+        for line in lines:
+            x, y, z = map(float, line.split()[:3])
+            min_coord = min(min_coord, x, y, z)
+            max_coord = max(max_coord, x, y, z)
+            vertex_positions.append((x, y, z))
+        range_coord = max(abs(min_coord), abs(max_coord)) / 1
+        # range_coord = 1
+        vertex_positions = [(x/range_coord, y/range_coord, z/range_coord) for x, y, z in vertex_positions]
+        target = torch.tensor(vertex_positions).reshape(1, resolution, resolution, 3).float().cuda()
     ##########################################
 
     num_ctrl_pts1 = ctr_pts
@@ -259,7 +283,7 @@ def main(config):
     num_eval_pts_u = resolution
     num_eval_pts_v = resolution
     
-    inp_ctrl_pts = torch.nn.Parameter(torch.rand((1,num_ctrl_pts1,num_ctrl_pts2,3), requires_grad=True).float().cuda())
+    inp_ctrl_pts = torch.nn.Parameter(torch.tensor(generate_cylinder(vertex_positions, ctr_pts, ctr_pts, axis='y', object_name=object_name), requires_grad=True).reshape(1, ctr_pts, ctr_pts,3).float().cuda())
 
 
     knot_int_u = torch.nn.Parameter(torch.ones(num_ctrl_pts1+p+1-2*p-1).unsqueeze(0).cuda(), requires_grad=True)
@@ -287,20 +311,27 @@ def main(config):
     surf.knotvector_v = utilities.generate_knot_vector(3, num_ctrl_pts2)
 
     # Set evaluation delta
-    surf.delta = 0.025
+    surf.delta = 0.01
 
     # Evaluate surface points
     surf.evaluate()
     
     # print(target.shape)
     layer = SurfEval(num_ctrl_pts1, num_ctrl_pts2, dimension=3, p=p, q=q, out_dim_u=num_eval_pts_u, out_dim_v=num_eval_pts_v, method='tc', dvc='cuda').cuda()
-    opt1 = torch.optim.Adam(iter([inp_ctrl_pts, weights]), lr=0.1) 
+    opt1 = torch.optim.Adam(iter([inp_ctrl_pts]), lr=0.1) 
+    lr_schedule1 = torch.optim.lr_scheduler.ReduceLROnPlateau(opt1, patience=10, factor=0.5, verbose=True, min_lr=1e-4, 
+                                                            eps=1e-08, threshold=1e-4, threshold_mode='rel', cooldown=0,
+                                                            )
     # opt2 = torch.optim.Adam(iter([knot_int_u, knot_int_v]), lr=1e-2)
-    lr_schedule1 = torch.optim.lr_scheduler.ReduceLROnPlateau(opt1, patience=3)
+    # lr_schedule1 = torch.optim.lr_scheduler.ReduceLROnPlateau(opt1, patience=3)
     # lr_schedule2 = torch.optim.lr_scheduler.ReduceLROnPlateau(opt2, patience=3)
-    pbar = tqdm(range(num_epochs))
+    pbar = tqdm(range(250))
     fig = plt.figure(figsize=(15, 9))
     time1 = time.time()
+    knot_rep_p_0 = torch.zeros(1,p+1).cuda()
+    knot_rep_p_1 = torch.zeros(1,p).cuda()
+    knot_rep_q_0 = torch.zeros(1,q+1).cuda()
+    knot_rep_q_1 = torch.zeros(1,q).cuda()
     for i in pbar:
 
         def closure():
@@ -318,10 +349,11 @@ def main(config):
             # loss += 0.001 * laplacian_loss(out, target)
 
             if ignore_uv:
+                lap = 0.001 * laplacian_loss_unsupervised(out)
                 out = out.reshape(1, num_eval_pts_u*num_eval_pts_v, 3)
                 tgt = target.reshape(1, num_eval_pts_u*num_eval_pts_v, 3)
                 if loss_type == 'chamfer':
-                    loss += chamfer_distance(out, tgt)
+                    loss += chamfer_distance(out, tgt) + lap
                 elif loss_type == 'mse':
                     loss += ((out - tgt) ** 2).mean()
             else:
@@ -339,6 +371,7 @@ def main(config):
 
         # if (i%300) < 30:
         loss = opt1.step(closure)
+        lr_schedule1.step(loss)
         # else:
             # loss = opt2.step(closure)        
 

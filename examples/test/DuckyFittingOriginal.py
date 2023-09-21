@@ -1,6 +1,8 @@
 import torch
 import numpy as np
 
+# from examples.test.u_test_u_reverse import laplacian_loss_unsupervised
+
 # from examples.test.u_test_u import laplacian_loss_unsupervised
 
 # from examples.test.u_test_u_reverse import chamfer_distance
@@ -35,14 +37,44 @@ plt.rc('legend', fontsize=SMALL_SIZE)    # legend fontsize
 plt.rc('figure', titlesize=BIGGER_SIZE)  # fontsize of the figure title
 
 
+def laplacian_loss_unsupervised(output, dist_type="l2"):
+    filter = ([[[0.0, 0.25, 0.0], [0.25, -1.0, 0.25], [0.0, 0.25, 0.0]],
+               [[0, 0, 0], [0, 0, 0], [0, 0, 0]],
+               [[0, 0, 0], [0, 0, 0], [0, 0, 0]]])
+
+    filter = np.stack([filter, np.roll(filter, 1, 0), np.roll(filter, 2, 0)])
+
+    filter = -np.array(filter, dtype=np.float32)
+    filter = Variable(torch.from_numpy(filter)).cuda()
+    # print(output.shape)
+    laplacian_output = F.conv2d(output.permute(0, 3, 1, 2), filter, padding=1)
+    # print(laplacian_output.shape)
+    # fig_output = laplacian_output.permute(0, 2, 3, 1).cpu().detach().numpy()
+    # fig_output = np.reshape(fig_output, (fig_output.shape[1], fig_output.shape[2], fig_output.shape[3]))
+    # fig = plt.figure()
+    # ax1 = fig.add_subplot(111, projection='3d', adjustable='box', proj_type='ortho', aspect='equal')
+    # ax1.plot_wireframe(fig_output[:, :, 0], fig_output[:, :, 1], fig_output[:, :, 2])
+    # plt.savefig('laplacian_output.png')
+    if dist_type == "l2":
+        dist = torch.sum((laplacian_output) ** 2, 1) 
+
+        # dist = torch.sum((laplacian_output) ** 2, (1,2,3)) + torch.sum((laplacian_input)**2,(1,2,3))
+    elif dist_type == "l1":
+        dist = torch.abs(torch.sum(laplacian_output.mean(),1))
+    dist = torch.mean(dist)
+
+    return dist
+
 def laplacian_loss_splinenet(output, gt, dist_type="l2"):
+    # change output type to be torch.cude.foloattensor, output now is doubletensor
+
     filter = ([[[0.0, 0.25, 0.0], [0.25, -1.0, 0.25], [0.0, 0.25, 0.0]],
                [[0, 0, 0], [0, 0, 0], [0, 0, 0]],
                [[0, 0, 0], [0, 0, 0], [0, 0, 0]]])
     filter = np.stack([filter, np.roll(filter, 1, 0), np.roll(filter, 2, 0)])
 
     filter = -np.array(filter, dtype=np.float32)
-    filter = Variable(torch.from_numpy(filter)).cuda().float()
+    filter = Variable(torch.from_numpy(filter)).float().cuda()
 
     laplacian_output = F.conv2d(output.permute(0, 3, 1, 2), filter, padding=1)
     laplacian_input = F.conv2d(gt.permute(0, 3, 1, 2), filter, padding=1)
@@ -146,10 +178,14 @@ def main():
     p = 3
     q = 3
     knot_int_u = torch.nn.Parameter(torch.ones(num_ctrl_pts1+p+1-2*p-1).unsqueeze(0).cuda(), requires_grad=True)
+
+    # knot_int_u = torch.nn.Parameter(torch.tensor(knot_u[4:-4]).unsqueeze(0).cuda())
     # knot_int_u.data[0,3] = 0.0
     knot_int_v = torch.nn.Parameter(torch.ones(num_ctrl_pts2+q+1-2*q-1).unsqueeze(0).cuda(), requires_grad=True)
+    # knot_int_v = torch.nn.Parameter(torch.tensor(knot_v[4:-4]).unsqueeze(0).cuda())
     # knot_int_v.data[0,3] = 0.0
     weights = torch.nn.Parameter(torch.ones(1,num_ctrl_pts1, num_ctrl_pts2, 1).cuda(), requires_grad=True)
+    # weights = torch.nn.Parameter(torch.tensor(weights).reshape(1, num_ctrl_pts1, num_ctrl_pts2,1).cuda())
 
     layer = SurfEval(num_ctrl_pts1, num_ctrl_pts2, dimension=3, p=3, q=3, out_dim_u=num_eval_pts_u, out_dim_v=num_eval_pts_v, method='tc', dvc='cuda').cuda()
     opt1 = torch.optim.LBFGS(iter([inp_ctrl_pts, weights]), lr=0.5, max_iter=3)
@@ -185,8 +221,16 @@ def main():
             opt1.zero_grad()
             opt2.zero_grad()
             # out = layer(inp_ctrl_pts)
-            out = layer((torch.cat((inp_ctrl_pts,weights), -1), torch.cat((knot_rep_p_0,knot_int_u,knot_rep_p_1), -1), torch.cat((knot_rep_q_0,knot_int_v,knot_rep_q_1), -1)))
-            loss = ((target-out)**2).mean() + 0.01 * chamfer_distance(target,out) + 0.001 * hausdorff_distance(target,out) + 0.1 * laplacian_loss_splinenet(out, target, dist_type="l2")
+            out = layer((torch.cat((inp_ctrl_pts,weights), -1), torch.cat((knot_rep_p_0,knot_int_u,knot_rep_p_1), -1), torch.cat((knot_rep_q_0,knot_int_v,knot_rep_q_1), -1))).float()
+            
+            lap =  0.1 * laplacian_loss_unsupervised(inp_ctrl_pts)
+            out = out.reshape(1, num_eval_pts_u*num_eval_pts_v, 3)
+            tgt = target.reshape(1, num_eval_pts_u*num_eval_pts_v, 3)
+            
+            loss = chamfer_distance(out, tgt) + lap
+            # ((target-out)**2).mean() 
+            # + 0.01 * chamfer_distance(target,out)
+            # + 0.001 * hausdorff_distance(target,out) + 0.1 * laplacian_loss_splinenet(out, target, dist_type="l2")
 # laplacian_loss_unsupervised
             # out = out.reshape(1, num_eval_pts_u*num_eval_pts_v, 3)
             # tgt = target.reshape(1, num_eval_pts_u*num_eval_pts_v, 3)
@@ -209,7 +253,7 @@ def main():
         #     loss += (0.001/(i+1))*surf_area.sum()
         # print(out.size())
         # loss.backward()
-        if (i%300) < 30:
+        if (i%300) < 300:
             loss = opt1.step(closure)
         else:
             loss = opt2.step(closure)        # with torch.no_grad():
@@ -279,9 +323,9 @@ def main():
     ax3 = fig.add_subplot(133, adjustable='box')
     error_map = (((predicted - target_mpl) ** 2) / target_mpl).sum(-1)
     # im3 = ax.imshow(error_map, cmap='jet', interpolation='none', extent=[0,128,0,128])
-    im3 = ax3.imshow(error_map, cmap='jet', interpolation='none', extent=[0, 128, 0, 128], vmin=-0.001, vmax=0.001)
+    im3 = ax3.imshow(error_map, cmap='jet', interpolation='none', extent=[0, 128, 0, 128], vmin=-2, vmax=2)
     # fig.colorbar(im3, shrink=0.4, aspect=5)
-    fig.colorbar(im3, shrink=0.4, aspect=5, ticks=[-0.001, 0, 0.001])
+    fig.colorbar(im3, shrink=0.4, aspect=5, ticks=[-2, 0, 2])
     ax3.set_xlabel('$u$')
     ax3.set_ylabel('$v$')
     x_positions = np.arange(0, 128, 20)  # pixel count at label position

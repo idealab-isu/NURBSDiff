@@ -236,7 +236,8 @@ def laplacian_loss_unsupervised(output, dist_type="l2"):
     laplacian_output = F.conv2d(output.permute(0, 3, 1, 2), filter, padding=1)
 
     if dist_type == "l2":
-        dist = torch.sum((laplacian_output) ** 2, (1,2,3)) 
+        dist = torch.sum((laplacian_output) ** 2, 1) 
+
         # dist = torch.sum((laplacian_output) ** 2, (1,2,3)) + torch.sum((laplacian_input)**2,(1,2,3))
     elif dist_type == "l1":
         dist = torch.abs(torch.sum(laplacian_output.mean(),1))

@@ -192,6 +192,7 @@ def generate_cylinder(point_cloud, ctrl_pts_u, ctrl_pts_v, closed=True, axis='z'
 
     fig = plt.figure()
     ax1 = fig.add_subplot(111, projection='3d', adjustable='box', proj_type='ortho', aspect='equal')
+    ax1._axis3don = False
     ax1.plot_wireframe(cylinder_ctrlpts[:, :, 0], cylinder_ctrlpts[:, :, 1], cylinder_ctrlpts[:, :, 2])
     fig.show()
     with open(f'generated/{object_name}/origin_ctrlpts_{axis}.OFF', 'w') as f:
@@ -397,9 +398,16 @@ def laplacian_loss_unsupervised(output, dist_type="l2"):
     filter = Variable(torch.from_numpy(filter)).cuda()
     # print(output.shape)
     laplacian_output = F.conv2d(output.permute(0, 3, 1, 2), filter, padding=1)
-
+    # print(laplacian_output.shape)
+    # fig_output = laplacian_output.permute(0, 2, 3, 1).cpu().detach().numpy()
+    # fig_output = np.reshape(fig_output, (fig_output.shape[1], fig_output.shape[2], fig_output.shape[3]))
+    # fig = plt.figure()
+    # ax1 = fig.add_subplot(111, projection='3d', adjustable='box', proj_type='ortho', aspect='equal')
+    # ax1.plot_wireframe(fig_output[:, :, 0], fig_output[:, :, 1], fig_output[:, :, 2])
+    # plt.savefig('laplacian_output.png')
     if dist_type == "l2":
-        dist = torch.sum((laplacian_output) ** 2, (1,2,3)) 
+        dist = torch.sum((laplacian_output) ** 2, 1) 
+
         # dist = torch.sum((laplacian_output) ** 2, (1,2,3)) + torch.sum((laplacian_input)**2,(1,2,3))
     elif dist_type == "l1":
         dist = torch.abs(torch.sum(laplacian_output.mean(),1))
@@ -412,7 +420,6 @@ def laplacian_loss_unsupervised_sober(output, dist_type="l2"):
     sobel_filter = sobel_filter.repeat(output.shape[1], 1, 1, 1)  # Repeat the filter for each channel
 
     laplacian_output = F.conv2d(output.permute(0, 3, 1, 2), sobel_filter, padding=1)
-
     if dist_type == "l2":
         dist = torch.sum((laplacian_output) ** 2, (1, 2, 3))
     elif dist_type == "l1":
@@ -502,6 +509,7 @@ def point_pointcloud_distance(point, point_cloud):
     """
     dists = torch.norm(point_cloud - point, dim=1)
     return torch.min(dists)
+
 def pointcloud_pointcloud_distance(target_pc, predicted_pc):
     for i in range(target_pc.shape[0]):
         dists = point_pointcloud_distance(target_pc[i], predicted_pc)
@@ -510,6 +518,112 @@ def pointcloud_pointcloud_distance(target_pc, predicted_pc):
         else:
             dist += torch.min(dists)
     return dist/target_pc.shape[0]
+
+def all_permutations_half(array):
+    """
+    This method is used to generate permutation of control points grid.
+    This is specifically used for closed b-spline surfaces. Note that
+    In the pre-processing step, all closed splines are made to close in u
+    direction only, thereby reducing the possible permutations to half. This
+    is done to speedup the training and also to facilitate learning for neural
+    network.
+    """
+    permutations = []
+    permutations.append(array)
+    permutations.append(torch.flip(array, (1,)))
+    permutations.append(torch.flip(array, (2,)))
+    permutations.append(torch.flip(array, (1, 2)))
+    permutations = torch.stack(permutations, 0)
+    permutations = permutations.permute(1, 0, 2, 3, 4)
+    return permutations
+
+
+def roll(x: torch.Tensor, shift: int, dim: int = -1, fill_pad=None):
+    """
+    Rolls the tensor by certain shifts along certain dimension.
+    """
+    if 0 == shift:
+        return x
+    elif shift < 0:
+        shift = -shift
+        gap = x.index_select(dim, torch.arange(shift))
+        return torch.cat([x.index_select(dim, torch.arange(shift, x.size(dim))), gap], dim=dim)
+    else:
+        shift = x.size(dim) - shift
+        gap = x.index_select(dim, torch.arange(shift, x.size(dim)).cuda())
+        return torch.cat([gap, x.index_select(dim, torch.arange(shift).cuda())], dim=dim)
+
+
+def control_points_permute_closed_reg_loss(output, grid_size_x, grid_size_y):
+    """
+    control points prediction with permutation invariant loss
+    :param output: output of the network
+    :param control_points: N x grid_size x grid_size x 3
+    :param grid_size_x: size of the control points in u direction
+    :param grid_size_y: size of the control points in v direction
+    """
+    batch_size = output.shape[0]
+    output = output.view(batch_size, grid_size_x, grid_size_y, 3)
+    # output = torch.unsqueeze(output, 1)
+
+    # N x 8 x grid_size x grid_size x 3
+    rhos = []
+    for i in range(grid_size_y):
+        new_control_points = roll(output, i, 1)
+        rhos.append(all_permutations_half(new_control_points))
+    control_points = torch.cat(rhos, 1)
+    print(control_points.shape)
+    diff = (output - control_points) ** 2
+    diff = torch.sum(diff, (2, 3, 4))
+
+    loss, index = torch.min(diff, 1)
+    loss = torch.mean(loss) / (grid_size_x * grid_size_y * 3)
+
+    return loss, control_points[np.arange(batch_size), index]
+
+def extended_parameter(inp_ctrl_pts, weights):
+    first_layer_int = inp_ctrl_pts[:, 0, :, :]
+    first_layer_weights = weights[:, 0, :, :]
+    # Replicate the first layer to match the desired size
+    extended_inp_ctrl_pts = torch.cat((first_layer_int.unsqueeze(1), inp_ctrl_pts), dim=1)
+    first_column_int = extended_inp_ctrl_pts[:, :, 0, :]
+    extended_inp_ctrl_pts = torch.cat((first_column_int.unsqueeze(2), extended_inp_ctrl_pts), dim=2)
+    extended_weights = torch.cat((first_layer_weights.unsqueeze(1), weights), dim=1)
+    first_column_weights = extended_weights[:, :, 0, :]
+    extended_weights = torch.cat((first_column_weights.unsqueeze(2), extended_weights), dim=2)
+
+def compute_edge_lengths(points, u, v):
+    points = points.reshape(u, v, 3)
+
+    # Compute the differences between consecutive points
+    point_diff = points[:, :-1, :] - points[:, 1:, :]
+    last_to_first_diff = points[:, -1, :] - points[:, 0, :]
+
+    # Compute the L2 norm of differences along each dimension
+    point_diff_norm = torch.norm(point_diff, dim=2)
+    last_to_first_diff_norm = torch.norm(last_to_first_diff, dim=1)
+    
+    # Compute the total distance
+    total_distance = torch.sum(point_diff_norm) + torch.sum(last_to_first_diff_norm)
+    
+    # Compute the differences between consecutive points
+    point_diff = points[-1:, :, :] - points[1:, :, :]
+    last_to_first_diff = points[-1, :, :] - points[0, :, :]
+
+    # Compute the L2 norm of differences along each dimension
+    point_diff_norm = torch.norm(point_diff, dim=2)
+    last_to_first_diff_norm = torch.norm(last_to_first_diff, dim=1)
+
+    # Compute the total distance
+    total_distance = torch.sum(point_diff_norm) + torch.sum(last_to_first_diff_norm)
+
+    # Compute the total distance
+    total_distance = torch.sum(point_diff_norm) + torch.sum(last_to_first_diff_norm)
+    
+    # Compute the average distance
+    average_distance = total_distance / (points.shape[0] * points.shape[1]) / 2
+
+    return average_distance
 
 def main(config):
  
@@ -526,7 +640,7 @@ def main(config):
     
     ctr_pts_u = config.ctrlpts_size_u
     ctr_pts_v = config.ctrlpts_size_v
-    sample_size = 30
+    sample_size = 100
     
     object_name = gt_path.split("/")[-1].split(".")[0]
     if object_name[-1] == '1':
@@ -539,11 +653,12 @@ def main(config):
 
 
     with open(gt_path + '_' + str(resolution * resolution) + '.off', 'r') as f:
+    # with open('../../meshes/duck_vertices.off', 'r') as f:
         lines = f.readlines()
 
         # skip the first line
-        lines = lines[2:]
-        lines = random.sample(lines, k=resolution * resolution)
+        lines = lines[2:2 + resolution * resolution]
+        # lines = random.sample(lines, k=resolution * resolution)
         # extract vertex positions
         vertex_positions = []
         for line in lines:
@@ -609,7 +724,9 @@ def main(config):
                 # print(predicted_target[i, j, :])
                 line = str(beforeTrained[i, j, 0]) + ' ' + str(beforeTrained[i, j, 1]) + ' ' + str(beforeTrained[i, j, 2]) + '\n'
                 f.write(line)
-                
+    
+    
+            
     for i in pbar:
         # torch.cuda.empty_cache()
         knot_rep_p_0 = torch.zeros(1,p+1).cuda()
@@ -622,6 +739,8 @@ def main(config):
             opt1.zero_grad()
             # opt2.zero_grad()
             # out = layer(inp_ctrl_pts)
+            # Extract the first layer of the tensor
+
             out = layer((torch.cat((inp_ctrl_pts,weights), -1), torch.cat((knot_rep_p_0,knot_int_u,knot_rep_p_1), -1), torch.cat((knot_rep_q_0,knot_int_v,knot_rep_q_1), -1)))
 
             loss = 0
@@ -629,12 +748,23 @@ def main(config):
            
 
             if ignore_uv:
-                lap = 0.001 * laplacian_loss_unsupervised(out)
-                lap2 = 0.001 * laplacian_loss_splinenet(out, target)
+                # reg_loss, permute_cp = control_points_permute_closed_reg_loss(inp_ctrl_pts, ctr_pts_u, ctr_pts_v)
+                # print(reg_loss)
+                # print(permute_cp.shape)
+                # inp_ctrl_pts = permute_cp
+                lap =  0.1 * laplacian_loss_unsupervised(out)
+                edges_loss = 0.01 * compute_edge_lengths(inp_ctrl_pts, num_ctrl_pts1, num_ctrl_pts2)
+                # lap2 = 0.001 * laplacian_loss_splinenet(out, target)
                 out = out.reshape(1, sample_size*sample_size, 3)
                 tgt = target.reshape(1, num_eval_pts_u*num_eval_pts_v, 3)
                 if loss_type == 'chamfer':
-                    loss += chamfer_distance(out, tgt) + lap 
+                    loss += 1 * chamfer_distance(out, tgt) + lap
+                    # + 0.5 * ((out - tgt) ** 2).mean()
+                    # + lap + 0.5 * ((out - tgt) ** 2).mean()
+                    # + 0.001 * ((out - tgt) ** 2).mean()
+                    # + edges_loss
+                    #  + 0.01 * hausdorff_distance(out, tgt)
+                    # + lap 
                     # + 0.01 * hausdorff_distance(out, tgt) + lap2
                     # + lap 
                     # + 0.001 * hausdorff_distance(out, tgt)
@@ -673,10 +803,91 @@ def main(config):
             break
         
         pbar.set_description("Loss %s: %s" % (i+1, loss.item()))
+    
+    # pbar = tqdm(range(num_epochs // 3))
+    # opt1 = torch.optim.Adam(iter([inp_ctrl_pts]), lr=0.5) 
+
+    # # opt2 = torch.optim.Adam(iter([knot_int_u, knot_int_v]), lr=1e-2)
+    # lr_schedule1 = torch.optim.lr_scheduler.ReduceLROnPlateau(opt1, patience=10, factor=0.5, verbose=True, min_lr=1e-4, 
+                                                            #   eps=1e-08, threshold=1e-4, threshold_mode='rel', cooldown=0,
+                                                            #   )
+    # for i in pbar:
+    #     # torch.cuda.empty_cache()
+    #     knot_rep_p_0 = torch.zeros(1,p+1).cuda()
+    #     knot_rep_p_1 = torch.zeros(1,p).cuda()
+    #     knot_rep_q_0 = torch.zeros(1,q+1).cuda()
+    #     knot_rep_q_1 = torch.zeros(1,q).cuda()
+
+
+    #     def closure():
+    #         opt1.zero_grad()
+    #         # opt2.zero_grad()
+    #         # out = layer(inp_ctrl_pts)
+    #         # Extract the first layer of the tensor
+
+    #         out = layer((torch.cat((inp_ctrl_pts,weights), -1), torch.cat((knot_rep_p_0,knot_int_u,knot_rep_p_1), -1), torch.cat((knot_rep_q_0,knot_int_v,knot_rep_q_1), -1)))
+
+    #         loss = 0
+    #         # loss += 0.001 * laplacian_loss(out, target)
+           
+
+    #         if ignore_uv:
+    #             # reg_loss, permute_cp = control_points_permute_closed_reg_loss(inp_ctrl_pts, ctr_pts_u, ctr_pts_v)
+    #             # print(reg_loss)
+    #             # print(permute_cp.shape)
+    #             # inp_ctrl_pts = permute_cp
+    #             lap = 0.001 * laplacian_loss_unsupervised(inp_ctrl_pts)
+    #             edges_loss = 0.005 * compute_edge_lengths(inp_ctrl_pts, num_ctrl_pts1, num_ctrl_pts2)
+    #             # lap2 = 0.001 * laplacian_loss_splinenet(out, target)
+    #             out = out.reshape(1, sample_size*sample_size, 3)
+    #             tgt = target.reshape(1, num_eval_pts_u*num_eval_pts_v, 3)
+    #             if loss_type == 'chamfer':
+    #                 loss += chamfer_distance(out, tgt) + lap
+    #                 # + edges_loss
+    #                 #  + 0.01 * hausdorff_distance(out, tgt)
+    #                 # + lap 
+    #                 # + 0.01 * hausdorff_distance(out, tgt) + lap2
+    #                 # + lap 
+    #                 # + 0.001 * hausdorff_distance(out, tgt)
+    #                 # print(loss)
+    #             elif loss_type == 'mse':
+    #                 loss += ((out - tgt) ** 2).mean()
+    #             elif loss_type == 'pp':
+    #                 out = out.reshape(sample_size * sample_size, 3)
+    #                 tgt = tgt.reshape(num_eval_pts_u * num_eval_pts_v, 3)
+    #                 loss += pointcloud_pointcloud_distance(out, tgt)
+    #         else:
+    #             if loss_type == 'chamfer':
+    #                 loss += chamfer_distance(out, target)
+    #             elif loss_type == 'mse':
+    #                 loss += ((out - target) ** 2).mean()
+
+
+            
+
+    #         loss.backward(retain_graph=True)
+    #         return loss
+        
+    #     # if (i%300) < 30:
+    #     loss = opt1.step(closure)
+    #     lr_schedule1.step(loss)
+    #     # else:
+    #         # loss = opt2.step(closure)        
+
+
+    #     out = layer((torch.cat((inp_ctrl_pts,weights), -1), torch.cat((knot_rep_p_0,knot_int_u,knot_rep_p_1), -1), torch.cat((knot_rep_q_0,knot_int_v,knot_rep_q_1), -1)))
+    #     # target = target.reshape(1,num_eval_pts_u,num_eval_pts_v,3)
+    #     # out = out.reshape(1,num_eval_pts_u,num_eval_pts_v,3)
+        
+    #     if loss.item() < 1e-6:
+    #         print((time.time() - time1)/ (i + 1)) 
+    #         break
+        
+    #     pbar.set_description("Loss %s: %s" % (i+1, loss.item()))
     torch.save(layer.state_dict(), f'models/{object_name}_ctrpts_{ctr_pts}_eval_{resolution}_reconstruct_{out_dim}.pth')
     print((time.time() - time1)/ (num_epochs+1)) 
 
-    train_uspan_uv, train_vspan_uv = layer.getuvspan()
+    # train_uspan_uv, train_vspan_uv = layer.getuvspan()
     # target_uspan_uv, target_vspan_uv = layer.getuvsapn()
     # print(inp_ctrl_pts)
 
@@ -753,6 +964,7 @@ def main(config):
     # predicted_extended = predicted_extended.reshape(-1, 3)
     # print(predicted_extended)
     # print(np.shape(predicted_extended))
+       
     ax1 = fig.add_subplot(151, projection='3d', adjustable='box', proj_type='ortho', aspect='equal')
     # ax1.set_box_aspect([1,1,1])
     ax1.plot_wireframe(target_mpl[:, :, 0], target_mpl[:, :, 1], target_mpl[:, :,2], color='red', label='GT Surface')
@@ -800,7 +1012,18 @@ def main(config):
     knot_rep_p_1 = torch.zeros(1,p).cuda()
     knot_rep_q_0 = torch.zeros(1,q+1).cuda()
     knot_rep_q_1 = torch.zeros(1,q).cuda()
-    out2 = layer((torch.cat((inp_ctrl_pts,weights), -1), torch.cat((knot_rep_p_0,knot_int_u,knot_rep_p_1), -1), torch.cat((knot_rep_q_0,knot_int_v,knot_rep_q_1), -1)))
+    # Extract the first layer of the tensor
+    first_layer_int = inp_ctrl_pts[:, 0, :, :]
+    first_layer_weights = weights[:, 0, :, :]
+    # Replicate the first layer to match the desired size
+    # extended_inp_ctrl_pts = torch.cat((first_layer_int.unsqueeze(1), inp_ctrl_pts), dim=1)
+    # first_column_int = extended_inp_ctrl_pts[:, :, 0, :]
+    # extended_inp_ctrl_pts = torch.cat((first_column_int.unsqueeze(2), extended_inp_ctrl_pts), dim=2)
+    # extended_weights = torch.cat((first_layer_weights.unsqueeze(1), weights), dim=1)
+    # first_column_weights = extended_weights[:, :, 0, :]
+    # extended_weights = torch.cat((first_column_weights.unsqueeze(2), extended_weights), dim=2)
+    # print(extended_inp_ctrl_pts.shape)
+    out2 = layer((torch.cat((inp_ctrl_pts, weights), -1), torch.cat((knot_rep_p_0,knot_int_u,knot_rep_p_1), -1), torch.cat((knot_rep_q_0,knot_int_v,knot_rep_q_1), -1)))
     out2 = out2.detach().cpu().numpy().squeeze(0).reshape(out_dim, out_dim, 3)
     ax4.plot_wireframe(out2[:, :, 0], out2[:, :, 1], out2[:, :, 2], color='cyan', label='Reconstructed Surface2')
     adjust_plot(ax4)
