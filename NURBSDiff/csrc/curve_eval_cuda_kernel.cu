@@ -20,7 +20,7 @@ __device__ __forceinline__ int find_span(int n, int p, float u, float* U)
       int low  = p;
       int high = n+1; 
       int mid = (low + high)/2;
-      while (u < U[mid]-eps || u >= U[mid+1]+eps){
+      while (u < U[mid]-eps || u >= U[mid+1]-eps){
             if (u < U[mid]-eps)
                   high = mid;
             else
