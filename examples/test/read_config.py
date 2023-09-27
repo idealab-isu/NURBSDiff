@@ -29,8 +29,13 @@ class Config(object):
         self.ctrlpts_size_u = config["train"].as_int("ctrlpts_size_u")
         self.ctrlpts_size_v = config["train"].as_int("ctrlpts_size_v")
         
-        self.resolution = config["train"].as_int("resolution")
-        self.out_dim = config["train"].as_int("out_dim")
+        self.resolution_u = config["train"].as_int("resolution_u")
+        self.resolution_v = config["train"].as_int("resolution_v")
+        self.sample_size_u = config["train"].as_int("sample_size_u")
+        self.sample_size_v = config["train"].as_int("sample_size_v")
+        
+        self.out_dim_u = config["train"].as_int("out_dim_u")
+        self.out_dim_v = config["train"].as_int("out_dim_v")
         # path to the model
         # self.pretrain_model_path = config["train"]["pretrain_model_path"]
 

@@ -23,26 +23,25 @@ loss_weight = 0.9
 
 batch_size = 36
 
-num_epochs = 1000
-
+num_epochs = 500
 axis = y
 
 # number of control points used on u, v
 ctrpts_size = 15
-
-ctrlpts_size_u = 15
-
-ctrlpts_size_v = 15
+ctrlpts_size_u = 14
+ctrlpts_size_v = 13
 
 # base function degree
 degree = 3
 
 # resolution on u, v
-resolution = 30
-
+resolution_u = 20
+resolution_v = 40
+sample_size_u = 20
+sample_size_v = 40
 # reconstruct surface on prediction
-out_dim = 30
-
+out_dim_u = 30
+out_dim_v = 60
 # optimzer
 optim = adam
 
