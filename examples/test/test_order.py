@@ -6,7 +6,7 @@ resolution_u = 15
 resolution_v = 15
 min_coord = max_coord = 0
 # with open('generated/ducky/duck1'+ '.ctrlpts', 'r') as f:
-with open('generated/duck1_sorted/predicted_ctrpts_ctrpts_15_eval_30_reconstruct_30_y'+ '.off', 'r') as f:
+with open('../../meshes/unsupervised_predicted_ctrpts_ctrpts_15x15_eval_30_reconstruct_32x32'+ '.OFF', 'r') as f:
     lines = f.readlines()
 
     # skip the first line

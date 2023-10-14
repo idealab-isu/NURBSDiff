@@ -3,7 +3,7 @@ import time
 import torch
 import numpy as np
 
-# from DuckyFittingOriginal import read_weights
+from DuckyFittingOriginal import read_weights
 from examples.splinenet import DGCNNControlPoints, get_graph_feature
 from examples.test.mesh_reconstruction import reconstructed_mesh
 from examples.test.test_dgcnn import DGCNN, DGCNN_without_grad
@@ -329,42 +329,11 @@ def chamfer_distance(pred, gt, sqrt=False):
     diff = pred - gt
     diff = torch.sum(diff ** 2, 3)
     if sqrt:
-        diff = torch.sqrt(diff)
+        diff = guard_sqrt(diff)
 
     cd = torch.mean(torch.min(diff, 1)[0], 1) + torch.mean(torch.min(diff, 2)[0], 1)
     cd = torch.mean(cd) / 2.0
     return cd
-
-def chamfer_distance_each_row(pred, gt, sqrt=False):
-    """
-    Computes average chamfer distance prediction and groundtruth
-    :param pred: Prediction: M x N x 3
-    :param gt: ground truth: M x N x 3
-    :return:
-    """
-    # print(pred.shape)
-    if isinstance(pred, np.ndarray):
-        pred = Variable(torch.from_numpy(pred.astype(np.float32))).cuda()
-
-    if isinstance(gt, np.ndarray):
-        gt = Variable(torch.from_numpy(gt.astype(np.float32))).cuda()
-
-    # pred = torch.unsqueeze(pred, 1)
-    # gt = torch.unsqueeze(gt, 2)
-    row, col = pred.shape[0], pred.shape[1]
-    total_cd = 0
-    for i in range(row):
-        gt_row = gt[i]
-        pred_row = pred[i]
-        
-        diff = pred_row.unsqueeze(0) - gt_row.unsqueeze(1)
-        dist = torch.sum(diff ** 2, dim=2)
-        if sqrt:
-            dist = torch.sqrt(dist)
-        dist1, _ = torch.min(dist, dim=1)
-        dist2, _ = torch.min(dist, dim=0)
-        total_cd += torch.mean(dist1, 0) + torch.mean(dist2, 0)
-    return total_cd / 2.0 / row
 
 
 
@@ -656,79 +625,77 @@ def compute_edge_lengths(points, u, v):
 
     return average_distance
 
-# Define your custom loss function
-def non_descending_loss(knot_vector):
-    loss = 0.0
-    for i in range(len(knot_vector) - 1):
-        diff = knot_vector[i + 1] - knot_vector[i]
-        loss += 2 * torch.relu(-diff)  # Penalize negative differences
-    
-    # Range constraint penalties
-    min_range = 0.0  # Minimum range value
-    max_range = 1.0  # Maximum range value
-
-    for knot in knot_vector[0]:
-        if knot < min_range:
-            loss += torch.relu(min_range - knot)  # Penalize values below the range
-        if knot > max_range:
-            loss += torch.relu(knot - max_range)  # Penalize values above the range
-
-    return loss
-    
-
-def main(config):
+def main():
  
-    gt_path = config.gt_pc
-    ctr_pts = config.ctrpts_size
-    resolution_u = config.resolution_u
-    resolution_v = config.resolution_v
-    p = q = config.degree
+    gt_path = "../../meshes/duck1_sorted"
+    ctr_pts = 15
+    # resolution_u = 64
+    # resolution_v = 64
+    p = q = 3
 
-    num_epochs = config.num_epochs
-    loss_type = config.loss_type
-    ignore_uv = config.ignore_uv
-    axis = config.axis
+    num_epochs = 500
+    loss_type = "chamfer"
+    ignore_uv = True
+    axis = "y"
     
-    out_dim_u = config.out_dim_u
-    out_dim_v = config.out_dim_v
-    ctr_pts_u = config.ctrlpts_size_u
-    ctr_pts_v = config.ctrlpts_size_v
-    sample_size_u = config.sample_size_u
-    sample_size_v = config.sample_size_v
-    # resolution = 30
-    object_name = gt_path.split("/")[-1].split(".")[0]
-    if object_name[-1] == '1':
-        object_name = 'ducky'
-    elif 'custom_duck' in object_name:
-        object_name = 'custom_duck'
+    out_dim_u = 64
+    out_dim_v = 64
+    ctr_pts_u = 30
+    ctr_pts_v = 30
 
+
+    object_name = gt_path.split("/")[-1].split(".")[0]
+    
     # load point cloud
     max_coord = min_coord = 0
 
-
-    with open(gt_path + '_' + str(resolution_u * resolution_v) + '.off', 'r') as f:
+    with open('meshes/ducky_geolevels.off', 'r') as f:
     # with open('ex_ducky.off', 'r') as f:
     
         lines = f.readlines()
 
         # skip the first line
-        lines = lines[2:2 + resolution_u * resolution_v]
+        
         # lines = random.sample(lines, k=resolution * resolution)
         # extract vertex positions
+        
+        resolution_u = resolution_v = 0
+        num_points_level = []
         vertex_positions = []
         for line in lines:
-            x, y, z = map(float, line.split()[:3])
-            min_coord = min(min_coord, x, y, z)
-            max_coord = max(max_coord, x, y, z)
-            vertex_positions.append((x, y, z))
+            if line.startswith('#'):
+                resolution_u += 1
+                num_points = int(line.split()[-1])
+                num_points_level.append(num_points)
+                resolution_v = max(resolution_v, num_points)
+        for line in lines:
+            if line.startswith('#'):
+                level = int(line.split()[-2])
+                if len(vertex_positions) < level * resolution_v:
+                    vertex_positions += [(0, 0, 0) for _ in range(level * resolution_v - len(vertex_positions))]
+                elif len(vertex_positions) > level * resolution_v:
+                    # throw error
+                    print("something error")
+                    exit()
+
+            else:
+                x, y, z = map(float, line.split()[:3])
+                min_coord = min(min_coord, x, y, z)
+                max_coord = max(max_coord, x, y, z)
+                vertex_positions.append((x, y, z))
+        if len(vertex_positions) < resolution_u * resolution_v:
+            vertex_positions += [(0, 0, 0) for _ in range(resolution_u * resolution_v - len(vertex_positions))]
         range_coord = max(abs(min_coord), abs(max_coord))
         range_coord = 1
-        vertex_positions = np.array([(x/range_coord, y/range_coord, z/range_coord) for x, y, z in vertex_positions]).reshape(resolution_u, resolution_v, 3)
+        vertex_positions = [(x/range_coord, y/range_coord, z/range_coord) for x, y, z in vertex_positions]
+        
+        vertex_positions = np.array(vertex_positions).reshape(resolution_u, resolution_v, 3)
     
         target = torch.tensor(vertex_positions).reshape(1, resolution_u, resolution_v, 3).float().cuda()
         # permute the rows in target
         # target = target[:, :, torch.randperm(resolution), :]
-        
+        sample_size_u = resolution_u
+        sample_size_v = resolution_v
         
     ##########################################
 
@@ -750,8 +717,8 @@ def main(config):
     inp_ctrl_pts = torch.nn.Parameter(torch.tensor(generate_cylinder(vertex_positions, ctr_pts_u, ctr_pts_v, axis=axis, object_name=object_name), requires_grad=True).reshape(1, ctr_pts_u, ctr_pts_v,3).float().cuda())
     # inp_ctrl_pts = torch.nn.Parameter(torch.rand((1,num_ctrl_pts1,num_ctrl_pts2,3), requires_grad=True).float().cuda())
 
-    knot_int_u = torch.nn.Parameter(torch.ones(num_ctrl_pts1 - p).unsqueeze(0).cuda(), requires_grad=True)
-    knot_int_v = torch.nn.Parameter(torch.ones(num_ctrl_pts2 - q).unsqueeze(0).cuda(), requires_grad=True)
+    knot_int_u = torch.nn.Parameter(torch.ones(num_ctrl_pts1+p+1-2*p-1).unsqueeze(0).cuda(), requires_grad=True)
+    knot_int_v = torch.nn.Parameter(torch.ones(num_ctrl_pts2+q+1-2*q-1).unsqueeze(0).cuda(), requires_grad=True)
 
     weights = torch.nn.Parameter(torch.ones((1,num_ctrl_pts1,num_ctrl_pts2,1), requires_grad=True).float().cuda())
 
@@ -760,12 +727,9 @@ def main(config):
     dgcnncts = DGCNNControlPoints(11, num_points=11, mode=1).cuda()
     
     # opt1 = torch.optim.Adam(iter(list(dgcnncts.parameters()) + [inp_ctrl_pts]), lr=0.05) 
-    opt1 = torch.optim.Adam(iter([inp_ctrl_pts, weights]), lr=0.5) 
-    opt2 = torch.optim.Adam(iter([knot_int_u, knot_int_v]), lr=1e-2)
+    opt1 = torch.optim.Adam(iter([inp_ctrl_pts]), lr=0.5) 
+    # opt2 = torch.optim.Adam(iter([knot_int_u, knot_int_v]), lr=1e-2)
     lr_schedule1 = torch.optim.lr_scheduler.ReduceLROnPlateau(opt1, patience=10, factor=0.5, verbose=True, min_lr=1e-4, 
-                                                              eps=1e-08, threshold=1e-4, threshold_mode='rel', cooldown=0,
-                                                              )
-    lr_schedule2 = torch.optim.lr_scheduler.ReduceLROnPlateau(opt2, patience=10, factor=0.5, verbose=True, min_lr=1e-4, 
                                                               eps=1e-08, threshold=1e-4, threshold_mode='rel', cooldown=0,
                                                               )
     # lr_schedule2 = torch.optim.lr_scheduler.ReduceLROnPlateau(opt2, patience=3)
@@ -822,19 +786,14 @@ def main(config):
             inp_ctrl_pts[:, :, 0, :] = inp_ctrl_pts[:, :, -1, :] = (inp_ctrl_pts[:, :, 0, :] + inp_ctrl_pts[:, :, -1, :]) / 2
        
         def closure():
-            if i % 100 < 30:
-                opt1.zero_grad()
-            else:
-                opt2.zero_grad()
+            opt1.zero_grad()
+            # opt2.zero_grad()
             # out = layer(inp_ctrl_pts)
             # Extract the first layer of the tensor
 
             out = layer((torch.cat((inp_ctrl_pts,weights), -1), torch.cat((knot_rep_p_0,knot_int_u,knot_rep_p_1), -1), torch.cat((knot_rep_q_0,knot_int_v,knot_rep_q_1), -1)))
 
-            if i % 100 < 30:
-                loss = 0
-            else:
-                loss  = non_descending_loss(knot_int_u) + non_descending_loss(knot_int_v)
+            loss = 0
             # loss += 0.001 * laplacian_loss(out, target)
            
 
@@ -864,10 +823,10 @@ def main(config):
                 # print(tgt_knn.shape)
                 # print(input_ctrl_pts_knn.shape)
                 if loss_type == 'chamfer':
-                    loss += 0.899 * chamfer_distance_each_row(out, tgt) + lap + close_loss_column
+                    # loss += 0.899 * chamfer_distance(out, tgt) + lap + close_loss_column
                     # dist = (dgcnn(out_knn) - dgcnn(tgt_knn)) ** 2
                     # dist = (dgcnn(out_knn) - dgcnn(tgt_knn)) ** 2
-                    # loss += 0.9 * chamfer_distance(out, tgt) + 0.1 * lap
+                    loss += 0.9 * chamfer_distance(out, tgt) + 0.1 * lap
                     # + 0.1 * abs(dgcnncts(target_ctrl_pts_knn).mean())
                     # + 0.1 * lap
                     # 0.1 * abs(dgcnncts(target_ctrl_pts_knn).mean())
@@ -918,12 +877,11 @@ def main(config):
         # ax1.plot_wireframe(inp_ctrl_pts_numpy[:, :, 0], inp_ctrl_pts_numpy[:, :, 1], inp_ctrl_pts_numpy[:, :, 2])
         # plt.savefig('inp_ctrl_pts_numpy.png')
         
-        if (i%100) < 30:
-            loss = opt1.step(closure)
-            lr_schedule1.step(loss)
-        else:
-            loss = opt2.step(closure)
-            lr_schedule2.step(loss)        
+        # if (i%300) < 30:
+        loss = opt1.step(closure)
+        lr_schedule1.step(loss)
+        # else:
+            # loss = opt2.step(closure)        
         # with torch.no_grad():
         #     inp_ctrl_pts[:, 0, :, :] = inp_ctrl_pts[:, 0, :, :].mean(1)
         #     inp_ctrl_pts[:, -1, :, :] = inp_ctrl_pts[:, -1, :, :].mean(1)
@@ -1038,9 +996,9 @@ def main(config):
     # print(predictedweights.shape)
     # print(predictedctrlpts.shape)
     predictedknotu = knot_int_u.detach().cpu().numpy().squeeze().tolist()
-    predictedknotu = [0., 0., 0., 0.] + predictedknotu + [1., 1., 1.]
+    predictedknotu = [0., 0., 0., 0., 0.] + predictedknotu + [1., 1., 1., 1.]
     predictedknotv = knot_int_v.detach().cpu().numpy().squeeze().tolist()
-    predictedknotv = [0., 0., 0., 0.] + predictedknotv + [1., 1., 1.]
+    predictedknotv = [0., 0., 0., 0., 0.] + predictedknotv + [1., 1., 1., 1.]
 
     # Open the file in write mode
     with open('generated/u_test.ctrlpts', 'w') as f:
@@ -1236,11 +1194,10 @@ def main(config):
 
 if __name__ == '__main__':
     
-    config = Config('./configs/u_test_u_reverse.yml')
-    print(config.config)
+
 
     init_plt()
 
-    main(config)
+    main()
 
 

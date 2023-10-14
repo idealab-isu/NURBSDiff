@@ -3,11 +3,12 @@ import time
 import torch
 import numpy as np
 
-# from DuckyFittingOriginal import read_weights
+from DuckyFittingOriginal import read_weights
 from examples.splinenet import DGCNNControlPoints, get_graph_feature
 from examples.test.mesh_reconstruction import reconstructed_mesh
 from examples.test.test_dgcnn import DGCNN, DGCNN_without_grad
 torch.manual_seed(120)
+from tensorboard_logger import configure, log_value
 from tqdm import tqdm
 # from pytorch3d.loss import chamfer_distance
 from NURBSDiff.nurbs_eval import SurfEval
@@ -28,6 +29,7 @@ from read_config import Config
 SMALL_SIZE = 12
 MEDIUM_SIZE = 16
 BIGGER_SIZE = 20
+
 
 def init_plt():
     plt.rc('font', family='sans-serif') 
@@ -111,7 +113,7 @@ def generate_sheet(point_cloud, ctrl_pts_u, ctrl_pts_v, axis='z', object_name=No
     
         
     
-def generate_cylinder(point_cloud, ctrl_pts_u, ctrl_pts_v, closed=True, axis='z', object_name=None):
+def generate_cylinder(point_cloud, ctrl_pts_u, ctrl_pts_v, closed=True, axis='z', object_name=None, ratio_1=1.1, ratio_2=1.1):
     
     point_cloud = np.array(point_cloud).reshape(-1, 3)
     # Calculate the center of the cylinder
@@ -124,20 +126,20 @@ def generate_cylinder(point_cloud, ctrl_pts_u, ctrl_pts_v, closed=True, axis='z'
     if axis == 'z':
         min_z = np.min(point_cloud[:, 2])
         max_z = np.max(point_cloud[:, 2])
-        cylinder_height = max_z - min_z
+        cylinder_height = (max_z - min_z) * ratio_1
         distances = np.linalg.norm(point_cloud[:, :2] - cylinder_center[:2], axis=1)
     elif axis == 'y':
         min_y = np.min(point_cloud[:, 1])
         max_y = np.max(point_cloud[:, 1])
-        cylinder_height = (max_y - min_y) * 1.1
+        cylinder_height = (max_y - min_y) * ratio_1
         distances = np.linalg.norm(point_cloud[:, [0, 2]] - [cylinder_center[0], cylinder_center[2]], axis=1)
     elif axis == 'x':
         min_x = np.min(point_cloud[:, 0])
         max_x = np.max(point_cloud[:, 0])
-        cylinder_height = max_x - min_x
+        cylinder_height = (max_x - min_x) * ratio_1
         distances = np.linalg.norm(point_cloud[:, 1:] - cylinder_center[1:], axis=1)
 
-    cylinder_radius = np.max(distances) * 1.1
+    cylinder_radius = np.max(distances) * ratio_2
     
     cylinder_ctrlpts = []
     factor = cylinder_height / (ctrl_pts_u - 3)
@@ -365,9 +367,7 @@ def chamfer_distance_each_row(pred, gt, sqrt=False):
         dist2, _ = torch.min(dist, dim=0)
         total_cd += torch.mean(dist1, 0) + torch.mean(dist2, 0)
     return total_cd / 2.0 / row
-
-
-
+       
 def sinkhorn_loss(pred, gt, epsilon=0.1, n_iters=5):
     """
     Computes the Sinkhorn distance between prediction and groundtruth point clouds.
@@ -422,6 +422,29 @@ def laplacian_loss_splinenet(output, gt, dist_type="l2"):
     dist = torch.sum(dist, 1)
     dist = torch.mean(dist)
     return dist
+
+# def laplacian_loss_unsupervised(output, dist_type="l2"):
+#     filter = ([[[0.0, 0.25, 0.0], [0.25, -1.0, 0.25], [0.0, 0.25, 0.0]],
+#                [[0, 0, 0], [0, 0, 0], [0, 0, 0]],
+#                [[0, 0, 0], [0, 0, 0], [0, 0, 0]]])
+
+#     filter = np.stack([filter, np.roll(filter, 1, 0), np.roll(filter, 2, 0)])
+
+#     filter = -np.array(filter, dtype=np.float32)
+#     filter = Variable(torch.from_numpy(filter)).cuda()
+#     # print(output.shape)
+#     laplacian_output = F.conv2d(output.permute(0, 3, 1, 2), filter, padding=1)
+#     # print(laplacian_output.shape)
+
+#     if dist_type == "l2":
+#         dist = torch.sum((laplacian_output) ** 2, 1) 
+
+#         # dist = torch.sum((laplacian_output) ** 2, (1,2,3)) + torch.sum((laplacian_input)**2,(1,2,3))
+#     elif dist_type == "l1":
+#         dist = torch.abs(torch.sum(laplacian_output.mean(),1))
+#     dist = torch.mean(dist)
+
+#     return dist
 
 def laplacian_loss_unsupervised(output, dist_type="l2"):
     filter = ([[[0.0, 0.25, 0.0], [0.25, -1.0, 0.25], [0.0, 0.25, 0.0]],
@@ -656,102 +679,130 @@ def compute_edge_lengths(points, u, v):
 
     return average_distance
 
-# Define your custom loss function
-def non_descending_loss(knot_vector):
-    loss = 0.0
-    for i in range(len(knot_vector) - 1):
-        diff = knot_vector[i + 1] - knot_vector[i]
-        loss += 2 * torch.relu(-diff)  # Penalize negative differences
-    
-    # Range constraint penalties
-    min_range = 0.0  # Minimum range value
-    max_range = 1.0  # Maximum range value
-
-    for knot in knot_vector[0]:
-        if knot < min_range:
-            loss += torch.relu(min_range - knot)  # Penalize values below the range
-        if knot > max_range:
-            loss += torch.relu(knot - max_range)  # Penalize values above the range
-
-    return loss
-    
-
-def main(config):
+def main():
  
-    gt_path = config.gt_pc
-    ctr_pts = config.ctrpts_size
-    resolution_u = config.resolution_u
-    resolution_v = config.resolution_v
-    p = q = config.degree
-
-    num_epochs = config.num_epochs
-    loss_type = config.loss_type
-    ignore_uv = config.ignore_uv
-    axis = config.axis
+    gt_path = "../../meshes/duck_irregular_shape"
+    ctr_pts = 15
+    # resolution_u = 64
+    # resolution_v = 64
+    p = q = 3
     
-    out_dim_u = config.out_dim_u
-    out_dim_v = config.out_dim_v
-    ctr_pts_u = config.ctrlpts_size_u
-    ctr_pts_v = config.ctrlpts_size_v
-    sample_size_u = config.sample_size_u
-    sample_size_v = config.sample_size_v
-    # resolution = 30
     object_name = gt_path.split("/")[-1].split(".")[0]
-    if object_name[-1] == '1':
-        object_name = 'ducky'
-    elif 'custom_duck' in object_name:
-        object_name = 'custom_duck'
+    
+    num_epochs = 1
+    loss_type = "chamfer"
+    ignore_uv = True
+    axis = "z"
+    
+    def get_current_time():
+        return time.strftime("%m%d%H%M%S", time.localtime())
+    current_time = get_current_time()
 
+    configure("logs/tensorboard/{}".format(f'{object_name}_irregular_input/{current_time}'), flush_secs=2)
+    
+    out_dim_u = 60
+    out_dim_v = 60
+    ctr_pts_u = 20
+    ctr_pts_v = 11
+
+    resolution_v = 100
+    
+
+    
     # load point cloud
     max_coord = min_coord = 0
 
-
-    with open(gt_path + '_' + str(resolution_u * resolution_v) + '.off', 'r') as f:
+    input_point_list = []
+    
+    with open('../../meshes/duck_irregular_shape_2550.txt', 'r') as f:
     # with open('ex_ducky.off', 'r') as f:
     
         lines = f.readlines()
 
         # skip the first line
-        lines = lines[2:2 + resolution_u * resolution_v]
+        
         # lines = random.sample(lines, k=resolution * resolution)
         # extract vertex positions
+        
+        resolution_u = 0
         vertex_positions = []
+        target_list = []
         for line in lines:
-            x, y, z = map(float, line.split()[:3])
-            min_coord = min(min_coord, x, y, z)
-            max_coord = max(max_coord, x, y, z)
-            vertex_positions.append((x, y, z))
+            if line.startswith('#'):
+                resolution_u += 1
+                if len(vertex_positions) > 0:
+                    target = torch.tensor(vertex_positions).float().cuda()
+                    target_list.append(target)
+                    vertex_positions = []
+                    
+            else:
+                x, y, z = map(float, line.split()[:3])
+                min_coord = min(min_coord, x, y, z)
+                max_coord = max(max_coord, x, y, z)
+                vertex_positions.append((x, y, z))
+                input_point_list.append((x, y, z))
+                
         range_coord = max(abs(min_coord), abs(max_coord))
         range_coord = 1
-        vertex_positions = np.array([(x/range_coord, y/range_coord, z/range_coord) for x, y, z in vertex_positions]).reshape(resolution_u, resolution_v, 3)
-    
-        target = torch.tensor(vertex_positions).reshape(1, resolution_u, resolution_v, 3).float().cuda()
+        target = torch.tensor(vertex_positions).float().cuda()
+        # print(target.shape)
+        target_list.append(target)
+        for i in range(len(target_list)):
+            target_list[i] /= range_coord
+        # target = torch.tensor(vertex_positions).reshape(1, resolution_u, resolution_v, 3).float().cuda()
         # permute the rows in target
         # target = target[:, :, torch.randperm(resolution), :]
+
+        sample_size_u = resolution_u
+        sample_size_v = resolution_v
         
+        
+    # with open('../../meshes/duck_irregular_shape_930.off', 'r') as f:
+    # # with open('ex_ducky.off', 'r') as f:
+    
+    #     lines = f.readlines()
+
+    #     # skip the first line
+    #     lines = lines[2:2 + resolution_u * resolution_v]
+    #     # lines = random.sample(lines, k=resolution * resolution)
+    #     # extract vertex positions
+    #     v = []
+    #     for line in lines:
+    #         x, y, z = map(float, line.split()[:3])
+    #         min_coord = min(min_coord, x, y, z)
+    #         max_coord = max(max_coord, x, y, z)
+    #         v.append((x, y, z))
+    #     range_coord = max(abs(min_coord), abs(max_coord))
+    #     range_coord = 1
+    #     v = np.array([(x/range_coord, y/range_coord, z/range_coord) for x, y, z in v]).reshape(resolution_u, resolution_v, 3)
+    #     print(v == np.array(target_list).reshape(31, 30, 3))
+    #     print(v[29, 13, :])
+    #     print(target_list[29][13, :])
+    # target = torch.tensor(np.array(target_list)).reshape(1, 31, 30, 3).float().cuda()
         
     ##########################################
 
-    with open(f'generated/{object_name}/normalied_input_point_cloud.OFF', 'w') as f:
-        # Loop over the array rows
-        f.write('OFF\n')
-        f.write(str(resolution_u * resolution_v) + ' ' + '0 0\n')
-        for i in range(resolution_u):
-            for j in range(resolution_v):
-                # print(predicted_target[i, j, :])
-                line = str(vertex_positions[i, j, 0]) + ' ' + str(vertex_positions[i, j, 1]) + ' ' + str(vertex_positions[i, j, 2]) + '\n'
-                f.write(line)
+    # with open(f'generated/{object_name}/normalied_input_point_cloud.OFF', 'w') as f:
+    #     # Loop over the array rows
+    #     f.write('OFF\n')
+    #     f.write(str(resolution_u * resolution_v) + ' ' + '0 0\n')
+    #     for i in range(resolution_u):
+    #         for j in range(resolution_v):
+    #             # print(predicted_target[i, j, :])
+    #             line = str(vertex_positions[i, j, 0]) + ' ' + str(vertex_positions[i, j, 1]) + ' ' + str(vertex_positions[i, j, 2]) + '\n'
+    #             f.write(line)
     
     num_ctrl_pts1 = ctr_pts_u
     num_ctrl_pts2 = ctr_pts_v
     num_eval_pts_u = resolution_u
-    num_eval_pts_v = resolution_v
+    # num_eval_pts_v = resolution_v
 
-    inp_ctrl_pts = torch.nn.Parameter(torch.tensor(generate_cylinder(vertex_positions, ctr_pts_u, ctr_pts_v, axis=axis, object_name=object_name), requires_grad=True).reshape(1, ctr_pts_u, ctr_pts_v,3).float().cuda())
+    inp_ctrl_pts = torch.nn.Parameter(torch.tensor(generate_cylinder(input_point_list, ctr_pts_u, ctr_pts_v, axis=axis, object_name=object_name), requires_grad=True).reshape(1, ctr_pts_u, ctr_pts_v,3).float().cuda())
     # inp_ctrl_pts = torch.nn.Parameter(torch.rand((1,num_ctrl_pts1,num_ctrl_pts2,3), requires_grad=True).float().cuda())
-
     knot_int_u = torch.nn.Parameter(torch.ones(num_ctrl_pts1 - p).unsqueeze(0).cuda(), requires_grad=True)
     knot_int_v = torch.nn.Parameter(torch.ones(num_ctrl_pts2 - q).unsqueeze(0).cuda(), requires_grad=True)
+    # knot_int_u = torch.nn.Parameter(torch.ones(num_ctrl_pts1+p+1-2*p-1).unsqueeze(0).cuda(), requires_grad=True)
+    # knot_int_v = torch.nn.Parameter(torch.ones(num_ctrl_pts2+q+1-2*q-1).unsqueeze(0).cuda(), requires_grad=True)
 
     weights = torch.nn.Parameter(torch.ones((1,num_ctrl_pts1,num_ctrl_pts2,1), requires_grad=True).float().cuda())
 
@@ -761,11 +812,8 @@ def main(config):
     
     # opt1 = torch.optim.Adam(iter(list(dgcnncts.parameters()) + [inp_ctrl_pts]), lr=0.05) 
     opt1 = torch.optim.Adam(iter([inp_ctrl_pts, weights]), lr=0.5) 
-    opt2 = torch.optim.Adam(iter([knot_int_u, knot_int_v]), lr=1e-2)
+    # opt2 = torch.optim.Adam(iter([knot_int_u, knot_int_v]), lr=1e-2)
     lr_schedule1 = torch.optim.lr_scheduler.ReduceLROnPlateau(opt1, patience=10, factor=0.5, verbose=True, min_lr=1e-4, 
-                                                              eps=1e-08, threshold=1e-4, threshold_mode='rel', cooldown=0,
-                                                              )
-    lr_schedule2 = torch.optim.lr_scheduler.ReduceLROnPlateau(opt2, patience=10, factor=0.5, verbose=True, min_lr=1e-4, 
                                                               eps=1e-08, threshold=1e-4, threshold_mode='rel', cooldown=0,
                                                               )
     # lr_schedule2 = torch.optim.lr_scheduler.ReduceLROnPlateau(opt2, patience=3)
@@ -778,7 +826,7 @@ def main(config):
     knot_rep_p_1 = torch.zeros(1,p).cuda()
     knot_rep_q_0 = torch.zeros(1,q+1).cuda()
     knot_rep_q_1 = torch.zeros(1,q).cuda()
-    beforeTrained = layer((torch.cat((inp_ctrl_pts,weights), -1), torch.cat((knot_rep_p_0,knot_int_u,knot_rep_p_1), -1), torch.cat((knot_rep_q_0,knot_int_v,knot_rep_q_1), -1))).detach().cpu().numpy().squeeze()
+    beforeTrained = layer((torch.cat((inp_ctrl_pts,weights), -1), torch.cat((knot_rep_p_0,knot_int_u,knot_rep_p_1), -1), torch.cat((knot_rep_q_0,knot_int_v,knot_rep_q_1), -1)))[0].detach().cpu().numpy().squeeze()
     
     with open(f'generated/{object_name}/before_trained.OFF', 'w') as f:
        # Loop over the array rows
@@ -819,22 +867,24 @@ def main(config):
         with torch.no_grad():
             inp_ctrl_pts[:, 0, :, :] = inp_ctrl_pts[:, 0, :, :].mean(1)
             inp_ctrl_pts[:, -1, :, :] = inp_ctrl_pts[:, -1, :, :].mean(1)
-            inp_ctrl_pts[:, :, 0, :] = inp_ctrl_pts[:, :, -1, :] = (inp_ctrl_pts[:, :, 0, :] + inp_ctrl_pts[:, :, -1, :]) / 2
+            inp_ctrl_pts[:, :, 0, :] = inp_ctrl_pts[:, :, -3, :] = (inp_ctrl_pts[:, :, 0, :] + inp_ctrl_pts[:, :, -3, :]) / 2
+            inp_ctrl_pts[:, :, 1, :] = inp_ctrl_pts[:, :, -2, :] = (inp_ctrl_pts[:, :, 1, :] + inp_ctrl_pts[:, :, -2, :]) / 2
+            inp_ctrl_pts[:, :, 2, :] = inp_ctrl_pts[:, :, -1, :] = (inp_ctrl_pts[:, :, 2, :] + inp_ctrl_pts[:, :, -1, :]) / 2
        
         def closure():
-            if i % 100 < 30:
-                opt1.zero_grad()
-            else:
-                opt2.zero_grad()
+            # if i < 600:
+            opt1.zero_grad()
+            # else:
+            #     opt2.zero_grad()
             # out = layer(inp_ctrl_pts)
             # Extract the first layer of the tensor
 
-            out = layer((torch.cat((inp_ctrl_pts,weights), -1), torch.cat((knot_rep_p_0,knot_int_u,knot_rep_p_1), -1), torch.cat((knot_rep_q_0,knot_int_v,knot_rep_q_1), -1)))
+            out, out_partial = layer((torch.cat((inp_ctrl_pts,weights), -1), torch.cat((knot_rep_p_0,knot_int_u,knot_rep_p_1), -1), torch.cat((knot_rep_q_0,knot_int_v,knot_rep_q_1), -1)))
 
-            if i % 100 < 30:
-                loss = 0
-            else:
-                loss  = non_descending_loss(knot_int_u) + non_descending_loss(knot_int_v)
+            # if i < 600:
+            loss = 0
+            # else:
+                # loss  = 4 * non_descending_loss(knot_int_u) + 4 * non_descending_loss(knot_int_v)
             # loss += 0.001 * laplacian_loss(out, target)
            
 
@@ -845,26 +895,36 @@ def main(config):
                 # inp_ctrl_pts = permute_cp
                 lap =  0.10 * laplacian_loss_unsupervised(inp_ctrl_pts)
                 lap2 = 0.00 * laplacian_loss_unsupervised(out)
-                lap3 = 0.00 * laplacian_loss_splinenet(out, target)
+                # lap3 = 0.00 * laplacian_loss_splinenet(out, target)
                 edges_loss = 0.10 * compute_edge_lengths(inp_ctrl_pts, num_ctrl_pts1, num_ctrl_pts2)
                 # compute dif between first column and last column  of control points
                 input_ctrl_pts_alter = inp_ctrl_pts.reshape(num_ctrl_pts1, num_ctrl_pts2, 3)
-                close_loss_column = 0.10 * torch.norm(input_ctrl_pts_alter[:, 0, :] - input_ctrl_pts_alter[:, -1, :])
+                close_loss_column = 0.20 * (
+                                            torch.norm(input_ctrl_pts_alter[:, 0, :] - input_ctrl_pts_alter[:, -3, :]) +
+                                            torch.norm(input_ctrl_pts_alter[:, 1, :] - input_ctrl_pts_alter[:, -2, :]) +
+                                            torch.norm(input_ctrl_pts_alter[:, 2, :] - input_ctrl_pts_alter[:, -1, :])
+                                        )
                 close_loss_row = 0.001 * torch.norm(input_ctrl_pts_alter[0, :, :] - input_ctrl_pts_alter[-1, :, :])
                 # lap2 = 0.001 * laplacian_loss_splinenet(out, target)
                 out = out.reshape(sample_size_u, sample_size_v, 3)
-                tgt = target.reshape(num_eval_pts_u, num_eval_pts_v, 3)
+                # tgt = target.reshape(sample_size_u, sample_size_v, 3)
                 out_knn = out.permute(0, 2, 1)
-                tgt_knn = tgt.permute(0, 2, 1)
+                # tgt_knn = tgt.permute(0, 2, 1)
                 input_ctrl_pts_knn = input_ctrl_pts_alter.permute(0, 2, 1)
-                target_ctrl_pts_knn = tgt.permute(0, 2, 1)
+                # target_ctrl_pts_knn = tgt.permute(0, 2, 1)
                 # feature1 = get_graph_feature(tgt_knn, k = 20)
                 # feature2 = get_graph_feature(out_knn, k = 20)
                 # print(chamfer_distance(out, tgt))
                 # print(tgt_knn.shape)
                 # print(input_ctrl_pts_knn.shape)
                 if loss_type == 'chamfer':
-                    loss += 0.899 * chamfer_distance_each_row(out, tgt) + lap + close_loss_column
+                    # .018018752336502075
+# 0.022206000983715057
+                    loss += 0.899 * chamfer_distance_each_row(out, target_list) + lap + close_loss_column
+                    # + close_loss_column
+                    log_value('chamfer_distance', chamfer_distance_each_row(out, target_list), i)
+                    log_value('laplacian_loss', lap * 10, i)
+                    log_value('close_loss_column', close_loss_column, i)
                     # dist = (dgcnn(out_knn) - dgcnn(tgt_knn)) ** 2
                     # dist = (dgcnn(out_knn) - dgcnn(tgt_knn)) ** 2
                     # loss += 0.9 * chamfer_distance(out, tgt) + 0.1 * lap
@@ -894,17 +954,6 @@ def main(config):
                     # + lap 
                     # + 0.001 * hausdorff_distance(out, tgt)
                     # print(loss)
-                elif loss_type == 'mse':
-                    loss += ((out - tgt) ** 2).mean()
-                elif loss_type == 'pp':
-                    out = out.reshape(sample_size_u * sample_size_v, 3)
-                    tgt = tgt.reshape(num_eval_pts_u * num_eval_pts_v, 3)
-                    loss += pointcloud_pointcloud_distance(out, tgt)
-            else:
-                if loss_type == 'chamfer':
-                    loss += chamfer_distance(out, target)
-                elif loss_type == 'mse':
-                    loss += ((out - target) ** 2).mean()
 
 
             
@@ -918,18 +967,17 @@ def main(config):
         # ax1.plot_wireframe(inp_ctrl_pts_numpy[:, :, 0], inp_ctrl_pts_numpy[:, :, 1], inp_ctrl_pts_numpy[:, :, 2])
         # plt.savefig('inp_ctrl_pts_numpy.png')
         
-        if (i%100) < 30:
-            loss = opt1.step(closure)
-            lr_schedule1.step(loss)
-        else:
-            loss = opt2.step(closure)
-            lr_schedule2.step(loss)        
+        # if (i%300) < 30:
+        loss = opt1.step(closure)
+        lr_schedule1.step(loss)
+        # else:
+            # loss = opt2.step(closure)        
         # with torch.no_grad():
         #     inp_ctrl_pts[:, 0, :, :] = inp_ctrl_pts[:, 0, :, :].mean(1)
         #     inp_ctrl_pts[:, -1, :, :] = inp_ctrl_pts[:, -1, :, :].mean(1)
         #     inp_ctrl_pts[:, :, 0, :] = inp_ctrl_pts[:, :, -1, :] = (inp_ctrl_pts[:, :, 0, :] + inp_ctrl_pts[:, :, -1, :]) / 2
 
-        out = layer((torch.cat((inp_ctrl_pts,weights), -1), torch.cat((knot_rep_p_0,knot_int_u,knot_rep_p_1), -1), torch.cat((knot_rep_q_0,knot_int_v,knot_rep_q_1), -1)))
+        out, out_partial = layer((torch.cat((inp_ctrl_pts,weights), -1), torch.cat((knot_rep_p_0,knot_int_u,knot_rep_p_1), -1), torch.cat((knot_rep_q_0,knot_int_v,knot_rep_q_1), -1)))
         # target = target.reshape(1,num_eval_pts_u,num_eval_pts_v,3)
         # out = out.reshape(1,num_eval_pts_u,num_eval_pts_v,3)
 
@@ -1019,7 +1067,7 @@ def main(config):
     #         break
         
     #     pbar.set_description("Loss %s: %s" % (i+1, loss.item()))
-    torch.save(layer.state_dict(), f'models/{object_name}_ctrpts_{ctr_pts}_eval_{resolution_u}x{ resolution_v}_reconstruct_{out_dim_u}x{out_dim_v}.pth')
+    torch.save(layer.state_dict(), f'models/{object_name}_ctrpts_{ctr_pts}_eval_irregular_reconstruct_{out_dim_u}x{out_dim_v}.pth')
     print((time.time() - time1)/ (num_epochs+1)) 
 
     # train_uspan_uv, train_vspan_uv = layer.getuvspan()
@@ -1038,9 +1086,9 @@ def main(config):
     # print(predictedweights.shape)
     # print(predictedctrlpts.shape)
     predictedknotu = knot_int_u.detach().cpu().numpy().squeeze().tolist()
-    predictedknotu = [0., 0., 0., 0.] + predictedknotu + [1., 1., 1.]
+    predictedknotu = [0., 0., 0., 0., 0.] + predictedknotu + [1., 1., 1., 1.]
     predictedknotv = knot_int_v.detach().cpu().numpy().squeeze().tolist()
-    predictedknotv = [0., 0., 0., 0.] + predictedknotv + [1., 1., 1.]
+    predictedknotv = [0., 0., 0., 0., 0.] + predictedknotv + [1., 1., 1., 1.]
 
     # Open the file in write mode
     with open('generated/u_test.ctrlpts', 'w') as f:
@@ -1102,7 +1150,7 @@ def main(config):
        
     ax1 = fig.add_subplot(151, projection='3d', adjustable='box', proj_type='ortho', aspect='equal')
     # ax1.set_box_aspect([1,1,1])
-    ax1.plot_wireframe(target_mpl[:, :, 0], target_mpl[:, :, 1], target_mpl[:, :,2], color='red', label='GT Surface')
+    # ax1.plot_wireframe(target_mpl[:, :, 0], target_mpl[:, :, 1], target_mpl[:, :,2], color='red', label='GT Surface')
     adjust_plot(ax1)
 
     ax2 = fig.add_subplot(152, projection='3d', adjustable='box', proj_type='ortho', aspect='equal')
@@ -1158,14 +1206,21 @@ def main(config):
     # first_column_weights = extended_weights[:, :, 0, :]
     # extended_weights = torch.cat((first_column_weights.unsqueeze(2), extended_weights), dim=2)
     # print(extended_inp_ctrl_pts.shape)
-    out2 = layer((torch.cat((inp_ctrl_pts, weights), -1), torch.cat((knot_rep_p_0,knot_int_u,knot_rep_p_1), -1), torch.cat((knot_rep_q_0,knot_int_v,knot_rep_q_1), -1)))
+    out2, _ = layer((torch.cat((inp_ctrl_pts, weights), -1), torch.cat((knot_rep_p_0,knot_int_u,knot_rep_p_1), -1), torch.cat((knot_rep_q_0,knot_int_v,knot_rep_q_1), -1)))
     out2 = out2.detach().cpu().numpy().squeeze(0).reshape(out_dim_u, out_dim_v, 3)
     ax4.plot_wireframe(out2[:, :, 0], out2[:, :, 1], out2[:, :, 2], color='cyan', label='Reconstructed Surface')
     adjust_plot(ax4)
 
-    target_mpl = target_mpl.reshape(resolution_u, resolution_v, 3)
+    # target_mpl = target_mpl.reshape(resolution_u, resolution_v, 3)
     predicted = predicted.reshape(sample_size_u, sample_size_v, 3)
-    ax5 = fig.add_subplot(155, adjustable='box')
+    
+    out_first_row = out_first_row.detach().cpu().numpy().squeeze(0).reshape(-1, sample_size_v, 3)
+    ax5 = fig.add_subplot(155, projection='3d', adjustable='box', proj_type='ortho', aspect='equal')
+    # error_map = (((predicted - target_mpl) ** 2) / target_mpl).sum(-1)
+    ax5.plot_wireframe(out_first_row[:, :, 0], out_first_row[:, :, 1], out_first_row[:, :, 2], color='lightgreen', label='Predicted Surface')
+    # im5 = ax5.imshow(error_map, cmap='jet', interpolation='none', extent=[0, 128, 0, 128], vmin=-0.001, vmax=0.001)
+    adjust_plot(ax5)
+    plt.show()
     # error_map = (((predicted - target_mpl) ** 2) / target_mpl).sum(-1)
 
     # im5 = ax5.imshow(error_map, cmap='jet', interpolation='none', extent=[0, 128, 0, 128], vmin=-0.001, vmax=0.001)
@@ -1193,7 +1248,7 @@ def main(config):
     # plt.savefig(f'u_{object_name}_ctrpts_{ctr_pts}_eval_{resolution_u}x{resolution_v}_reconstruct_{out_dim}.pdf')
     plt.show()
 
-    with open(f'generated/{object_name}/trained_ctrpts_{ctr_pts}_eval_{resolution_u}x{resolution_v}_reconstruct_{out_dim_u}x{out_dim_v}_{axis}.OFF', 'w') as f:
+    with open(f'generated/{object_name}/trained_ctrpts_{ctr_pts}_eval_irregular_reconstruct_{out_dim_u}x{out_dim_v}_{axis}.OFF', 'w') as f:
         # Loop over the array rows
         f.write('OFF\n')
         f.write(str(out_dim_u * out_dim_v) + ' ' + '0 0\n')
@@ -1213,7 +1268,7 @@ def main(config):
     #             if (j == out_dim - 1):
     #                 f.write('\n')
 
-    with open(f'generated/{object_name}/predicted_ctrpts_ctrpts_{ctr_pts}_eval_{resolution_u}x{resolution_v}_reconstruct_{out_dim_u}x{out_dim_v}_{axis}.OFF', 'w') as f:
+    with open(f'generated/{object_name}/predicted_ctrpts_ctrpts_{ctr_pts}_eval_irregular_reconstruct_{out_dim_u}x{out_dim_v}_{axis}.OFF', 'w') as f:
         # Loop over the array rows
         f.write('OFF\n')
         f.write(str(num_ctrl_pts1 * num_ctrl_pts2) + ' ' + '0 0\n')
@@ -1222,25 +1277,24 @@ def main(config):
                 line = str(predictedctrlpts[i, j, 0]) + ' ' + str(predictedctrlpts[i, j, 1]) + ' ' + str(predictedctrlpts[i, j, 2]) + '\n'
                 f.write(line)
                 
-    with open(f'generated/{object_name}/predicted_ctrpts_ctrpts_{ctr_pts}_eval_{resolution_u}x{resolution_v}_reconstruct_{out_dim_u}x{out_dim_v}_{axis}.ctrlpts', 'w') as f:
+    with open(f'generated/{object_name}/predicted_ctrpts_ctrpts_{ctr_pts}_eval_irregular_reconstruct_{out_dim_u}x{out_dim_v}_{axis}.ctrlpts', 'w') as f:
         # Loop over the array rows
         for i in range(num_ctrl_pts1):
             for j in range(num_ctrl_pts2):
                 line = str(predictedctrlpts[i, j, 0]) + ' ' + str(predictedctrlpts[i, j, 1]) + ' ' + str(predictedctrlpts[i, j, 2]) + '\n'
                 f.write(line)
                 
-    filename = f'generated/{object_name}/predicted_ctrpts_ctrpts_{ctr_pts}_eval_{resolution_u}x{resolution_v}_reconstruct_{out_dim_u}x{out_dim_v}_{axis}.ctrlpts'
+    filename = f'generated/{object_name}/predicted_ctrpts_ctrpts_{ctr_pts}_eval_irregular_reconstruct_{out_dim_u}x{out_dim_v}_{axis}.ctrlpts'
     reconstructed_mesh(object_name, filename, num_ctrl_pts1, num_ctrl_pts2)
     
     pass
 
 if __name__ == '__main__':
     
-    config = Config('./configs/u_test_u_reverse.yml')
-    print(config.config)
+
 
     init_plt()
 
-    main(config)
+    main()
 
 

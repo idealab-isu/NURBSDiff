@@ -3,7 +3,7 @@ import time
 import torch
 import numpy as np
 
-# from DuckyFittingOriginal import read_weights
+from DuckyFittingOriginal import read_weights
 from examples.splinenet import DGCNNControlPoints, get_graph_feature
 from examples.test.mesh_reconstruction import reconstructed_mesh
 from examples.test.test_dgcnn import DGCNN, DGCNN_without_grad
@@ -661,7 +661,7 @@ def non_descending_loss(knot_vector):
     loss = 0.0
     for i in range(len(knot_vector) - 1):
         diff = knot_vector[i + 1] - knot_vector[i]
-        loss += 2 * torch.relu(-diff)  # Penalize negative differences
+        loss += 4 * torch.relu(-diff)  # Penalize negative differences
     
     # Range constraint penalties
     min_range = 0.0  # Minimum range value
@@ -750,6 +750,9 @@ def main(config):
     inp_ctrl_pts = torch.nn.Parameter(torch.tensor(generate_cylinder(vertex_positions, ctr_pts_u, ctr_pts_v, axis=axis, object_name=object_name), requires_grad=True).reshape(1, ctr_pts_u, ctr_pts_v,3).float().cuda())
     # inp_ctrl_pts = torch.nn.Parameter(torch.rand((1,num_ctrl_pts1,num_ctrl_pts2,3), requires_grad=True).float().cuda())
 
+    # uniform knot vectors start from 0 to 1, length is num_ctrl_pts1 - p, but not including 0, but include 1
+    # knot_int_u = torch.nn.Parameter(torch.linspace(0, 1, num_ctrl_pts1 - p + 1)[1:].unsqueeze(0).cuda(), requires_grad=True)
+    # knot_int_v = torch.nn.Parameter(torch.linspace(0, 1, num_ctrl_pts2 - q + 1)[1:].unsqueeze(0).cuda(), requires_grad=True)
     knot_int_u = torch.nn.Parameter(torch.ones(num_ctrl_pts1 - p).unsqueeze(0).cuda(), requires_grad=True)
     knot_int_v = torch.nn.Parameter(torch.ones(num_ctrl_pts2 - q).unsqueeze(0).cuda(), requires_grad=True)
 
@@ -816,13 +819,15 @@ def main(config):
         knot_rep_q_0 = torch.zeros(1,q+1).cuda()
         knot_rep_q_1 = torch.zeros(1,q).cuda()
 
-        with torch.no_grad():
-            inp_ctrl_pts[:, 0, :, :] = inp_ctrl_pts[:, 0, :, :].mean(1)
-            inp_ctrl_pts[:, -1, :, :] = inp_ctrl_pts[:, -1, :, :].mean(1)
-            inp_ctrl_pts[:, :, 0, :] = inp_ctrl_pts[:, :, -1, :] = (inp_ctrl_pts[:, :, 0, :] + inp_ctrl_pts[:, :, -1, :]) / 2
+        # with torch.no_grad():
+        #     inp_ctrl_pts[:, 0, :, :] = inp_ctrl_pts[:, 0, :, :].mean(1)
+        #     inp_ctrl_pts[:, -1, :, :] = inp_ctrl_pts[:, -1, :, :].mean(1)
+        #     inp_ctrl_pts[:, :, 0, :] = inp_ctrl_pts[:, :, -3, :] = (inp_ctrl_pts[:, :, 0, :] + inp_ctrl_pts[:, :, -3, :]) / 2
+        #     inp_ctrl_pts[:, :, 1, :] = inp_ctrl_pts[:, :, -2, :] = (inp_ctrl_pts[:, :, 1, :] + inp_ctrl_pts[:, :, -2, :]) / 2
+        #     inp_ctrl_pts[:, :, 2, :] = inp_ctrl_pts[:, :, -1, :] = (inp_ctrl_pts[:, :, 2, :] + inp_ctrl_pts[:, :, -1, :]) / 2
        
         def closure():
-            if i % 100 < 30:
+            if i % 300 < 50:
                 opt1.zero_grad()
             else:
                 opt2.zero_grad()
@@ -831,10 +836,10 @@ def main(config):
 
             out = layer((torch.cat((inp_ctrl_pts,weights), -1), torch.cat((knot_rep_p_0,knot_int_u,knot_rep_p_1), -1), torch.cat((knot_rep_q_0,knot_int_v,knot_rep_q_1), -1)))
 
-            if i % 100 < 30:
+            if i % 300 < 50:
                 loss = 0
             else:
-                loss  = non_descending_loss(knot_int_u) + non_descending_loss(knot_int_v)
+                loss  = 4 * non_descending_loss(knot_int_u) + 4 * non_descending_loss(knot_int_v)
             # loss += 0.001 * laplacian_loss(out, target)
            
 
@@ -849,7 +854,11 @@ def main(config):
                 edges_loss = 0.10 * compute_edge_lengths(inp_ctrl_pts, num_ctrl_pts1, num_ctrl_pts2)
                 # compute dif between first column and last column  of control points
                 input_ctrl_pts_alter = inp_ctrl_pts.reshape(num_ctrl_pts1, num_ctrl_pts2, 3)
-                close_loss_column = 0.10 * torch.norm(input_ctrl_pts_alter[:, 0, :] - input_ctrl_pts_alter[:, -1, :])
+                close_loss_column = 0.50 * (
+                                            torch.norm(input_ctrl_pts_alter[:, 0, :] - input_ctrl_pts_alter[:, -3, :]) +
+                                            torch.norm(input_ctrl_pts_alter[:, 1, :] - input_ctrl_pts_alter[:, -2, :]) +
+                                            torch.norm(input_ctrl_pts_alter[:, 2, :] - input_ctrl_pts_alter[:, -1, :])
+                                        )
                 close_loss_row = 0.001 * torch.norm(input_ctrl_pts_alter[0, :, :] - input_ctrl_pts_alter[-1, :, :])
                 # lap2 = 0.001 * laplacian_loss_splinenet(out, target)
                 out = out.reshape(sample_size_u, sample_size_v, 3)
@@ -918,7 +927,7 @@ def main(config):
         # ax1.plot_wireframe(inp_ctrl_pts_numpy[:, :, 0], inp_ctrl_pts_numpy[:, :, 1], inp_ctrl_pts_numpy[:, :, 2])
         # plt.savefig('inp_ctrl_pts_numpy.png')
         
-        if (i%100) < 30:
+        if (i%300) < 50:
             loss = opt1.step(closure)
             lr_schedule1.step(loss)
         else:

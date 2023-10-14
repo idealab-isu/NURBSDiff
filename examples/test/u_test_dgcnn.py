@@ -3,8 +3,8 @@ import time
 import torch
 import numpy as np
 
-# from DuckyFittingOriginal import read_weights
-from examples.splinenet import DGCNNControlPoints, get_graph_feature
+from DuckyFittingOriginal import read_weights
+from examples.splinenet import DGCNNControlPoints, DGCNNControlPointsAdapted, get_graph_feature
 from examples.test.mesh_reconstruction import reconstructed_mesh
 from examples.test.test_dgcnn import DGCNN, DGCNN_without_grad
 torch.manual_seed(120)
@@ -747,55 +747,19 @@ def main(config):
     num_eval_pts_u = resolution_u
     num_eval_pts_v = resolution_v
 
-    inp_ctrl_pts = torch.nn.Parameter(torch.tensor(generate_cylinder(vertex_positions, ctr_pts_u, ctr_pts_v, axis=axis, object_name=object_name), requires_grad=True).reshape(1, ctr_pts_u, ctr_pts_v,3).float().cuda())
-    # inp_ctrl_pts = torch.nn.Parameter(torch.rand((1,num_ctrl_pts1,num_ctrl_pts2,3), requires_grad=True).float().cuda())
+    encoder = DGCNNControlPoints(num_ctrl_pts1, num_points=10, mode=1)
+    # encoder = DGCNNControlPointsAdapted(num_control_points_u=num_ctrl_pts1, num_control_points_v=num_ctrl_pts2, num_points=10, mode=1)
+    encoder.cuda()
 
-    knot_int_u = torch.nn.Parameter(torch.ones(num_ctrl_pts1 - p).unsqueeze(0).cuda(), requires_grad=True)
-    knot_int_v = torch.nn.Parameter(torch.ones(num_ctrl_pts2 - q).unsqueeze(0).cuda(), requires_grad=True)
-
-    weights = torch.nn.Parameter(torch.ones((1,num_ctrl_pts1,num_ctrl_pts2,1), requires_grad=True).float().cuda())
-
-    # print(target.shape)
-    layer = SurfEval(num_ctrl_pts1, num_ctrl_pts2, dimension=3, p=p, q=q, out_dim_u=sample_size_u, out_dim_v=sample_size_v, method='tc', dvc='cuda').cuda()
-    dgcnncts = DGCNNControlPoints(11, num_points=11, mode=1).cuda()
+    decoder = SurfEvalBS(num_ctrl_pts1, num_ctrl_pts2, dimension=3, p=3, q=3, out_dim_u=num_eval_pts_u, out_dim_v=num_eval_pts_v, method='tc', dvc='cuda')
+    decoder.cuda()
     
-    # opt1 = torch.optim.Adam(iter(list(dgcnncts.parameters()) + [inp_ctrl_pts]), lr=0.05) 
-    opt1 = torch.optim.Adam(iter([inp_ctrl_pts, weights]), lr=0.5) 
-    opt2 = torch.optim.Adam(iter([knot_int_u, knot_int_v]), lr=1e-2)
-    lr_schedule1 = torch.optim.lr_scheduler.ReduceLROnPlateau(opt1, patience=10, factor=0.5, verbose=True, min_lr=1e-4, 
-                                                              eps=1e-08, threshold=1e-4, threshold_mode='rel', cooldown=0,
-                                                              )
-    lr_schedule2 = torch.optim.lr_scheduler.ReduceLROnPlateau(opt2, patience=10, factor=0.5, verbose=True, min_lr=1e-4, 
-                                                              eps=1e-08, threshold=1e-4, threshold_mode='rel', cooldown=0,
-                                                              )
-    # lr_schedule2 = torch.optim.lr_scheduler.ReduceLROnPlateau(opt2, patience=3)
+    
     pbar = tqdm(range(num_epochs))
     fig = plt.figure(figsize=(15, 9))
     time1 = time.time()
     
     
-    knot_rep_p_0 = torch.zeros(1,p+1).cuda()
-    knot_rep_p_1 = torch.zeros(1,p).cuda()
-    knot_rep_q_0 = torch.zeros(1,q+1).cuda()
-    knot_rep_q_1 = torch.zeros(1,q).cuda()
-    beforeTrained = layer((torch.cat((inp_ctrl_pts,weights), -1), torch.cat((knot_rep_p_0,knot_int_u,knot_rep_p_1), -1), torch.cat((knot_rep_q_0,knot_int_v,knot_rep_q_1), -1))).detach().cpu().numpy().squeeze()
-    
-    with open(f'generated/{object_name}/before_trained.OFF', 'w') as f:
-       # Loop over the array rows
-        f.write('OFF\n')
-        f.write(str(sample_size_u * sample_size_v) + ' ' + '0 0\n')
-        for i in range(sample_size_u):
-            for j in range(sample_size_v):
-                # print(predicted_target[i, j, :])
-                line = str(beforeTrained[i, j, 0]) + ' ' + str(beforeTrained[i, j, 1]) + ' ' + str(beforeTrained[i, j, 2]) + '\n'
-                f.write(line)
-    
-    import argparse
-    parser = argparse.ArgumentParser()
-    parser.add_argument('--emb_dims', '-e', type=int, default=1024, help='Dimension of embeddings')
-    parser.add_argument('--k', type=int, default=29, help='Num of nearest neighbors to use')
-    parser.add_argument('--dropout', '-d', type=float, default=0.5, help='Dropout ratio')
-    args = parser.parse_args()
 
     # dgcnn = DGCNN_without_grad(args).cuda()
     # encoder = DGCNNControlPoints(20, num_points=10, mode=1)
@@ -807,131 +771,35 @@ def main(config):
     # for name, param in dgcnn.named_parameters():
     #     print(name, param.requires_grad)
     
-
+    optimizer = torch.optim.Adam(list(encoder.parameters())+list(decoder.parameters()),lr=3e-4)
+    lr_schedule_optimizer = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, patience=10, factor=0.5, verbose=True, min_lr=1e-4, 
+                                                              eps=1e-08, threshold=1e-5, threshold_mode='rel', cooldown=0,
+                                                              )
+    
     
     for i in pbar:
-        # torch.cuda.empty_cache()
-        knot_rep_p_0 = torch.zeros(1,p+1).cuda()
-        knot_rep_p_1 = torch.zeros(1,p).cuda()
-        knot_rep_q_0 = torch.zeros(1,q+1).cuda()
-        knot_rep_q_1 = torch.zeros(1,q).cuda()
-
-        with torch.no_grad():
-            inp_ctrl_pts[:, 0, :, :] = inp_ctrl_pts[:, 0, :, :].mean(1)
-            inp_ctrl_pts[:, -1, :, :] = inp_ctrl_pts[:, -1, :, :].mean(1)
-            inp_ctrl_pts[:, :, 0, :] = inp_ctrl_pts[:, :, -1, :] = (inp_ctrl_pts[:, :, 0, :] + inp_ctrl_pts[:, :, -1, :]) / 2
-       
-        def closure():
-            if i % 100 < 30:
-                opt1.zero_grad()
-            else:
-                opt2.zero_grad()
-            # out = layer(inp_ctrl_pts)
-            # Extract the first layer of the tensor
-
-            out = layer((torch.cat((inp_ctrl_pts,weights), -1), torch.cat((knot_rep_p_0,knot_int_u,knot_rep_p_1), -1), torch.cat((knot_rep_q_0,knot_int_v,knot_rep_q_1), -1)))
-
-            if i % 100 < 30:
-                loss = 0
-            else:
-                loss  = non_descending_loss(knot_int_u) + non_descending_loss(knot_int_v)
-            # loss += 0.001 * laplacian_loss(out, target)
-           
-
-            if ignore_uv:
-                # reg_loss, permute_cp = control_points_permute_closed_reg_loss(inp_ctrl_pts, ctr_pts_u, ctr_pts_v)
-                # print(reg_loss)
-                # print(permute_cp.shape)
-                # inp_ctrl_pts = permute_cp
-                lap =  0.10 * laplacian_loss_unsupervised(inp_ctrl_pts)
-                lap2 = 0.00 * laplacian_loss_unsupervised(out)
-                lap3 = 0.00 * laplacian_loss_splinenet(out, target)
-                edges_loss = 0.10 * compute_edge_lengths(inp_ctrl_pts, num_ctrl_pts1, num_ctrl_pts2)
-                # compute dif between first column and last column  of control points
-                input_ctrl_pts_alter = inp_ctrl_pts.reshape(num_ctrl_pts1, num_ctrl_pts2, 3)
-                close_loss_column = 0.10 * torch.norm(input_ctrl_pts_alter[:, 0, :] - input_ctrl_pts_alter[:, -1, :])
-                close_loss_row = 0.001 * torch.norm(input_ctrl_pts_alter[0, :, :] - input_ctrl_pts_alter[-1, :, :])
-                # lap2 = 0.001 * laplacian_loss_splinenet(out, target)
-                out = out.reshape(sample_size_u, sample_size_v, 3)
-                tgt = target.reshape(num_eval_pts_u, num_eval_pts_v, 3)
-                out_knn = out.permute(0, 2, 1)
-                tgt_knn = tgt.permute(0, 2, 1)
-                input_ctrl_pts_knn = input_ctrl_pts_alter.permute(0, 2, 1)
-                target_ctrl_pts_knn = tgt.permute(0, 2, 1)
-                # feature1 = get_graph_feature(tgt_knn, k = 20)
-                # feature2 = get_graph_feature(out_knn, k = 20)
-                # print(chamfer_distance(out, tgt))
-                # print(tgt_knn.shape)
-                # print(input_ctrl_pts_knn.shape)
-                if loss_type == 'chamfer':
-                    loss += 0.899 * chamfer_distance_each_row(out, tgt) + lap + close_loss_column
-                    # dist = (dgcnn(out_knn) - dgcnn(tgt_knn)) ** 2
-                    # dist = (dgcnn(out_knn) - dgcnn(tgt_knn)) ** 2
-                    # loss += 0.9 * chamfer_distance(out, tgt) + 0.1 * lap
-                    # + 0.1 * abs(dgcnncts(target_ctrl_pts_knn).mean())
-                    # + 0.1 * lap
-                    # 0.1 * abs(dgcnncts(target_ctrl_pts_knn).mean())
-                    # + 0.1 * torch.mean(torch.norm(feature1 - feature2, dim = 1))
-                    # 0.1 * dist.mean() + lap
-                    
-                    # print(torch.norm(dgcnn(tgt_knn) - dgcnn(out_knn), dim = 1).mean())
-                    # + lap + lap2 + lap3 + close_loss_column
-                    # + close_loss_row
-                    # + close_loss_column
-                    # + lap2
-                    # + hausdorff_distance(out, tgt) + lap2
-                    # + lap2
-                    # + close_loss_column 
-                    # + close_loss_row
-                    # + close_loss_column + close_loss_row
-                    # + 0.5 * ((out - tgt) ** 2).mean()
-                    # + lap + 0.5 * ((out - tgt) ** 2).mean()
-                    # + 0.001 * ((out - tgt) ** 2).mean()
-                    # + edges_loss
-                    #  + 0.01 * hausdorff_distance(out, tgt)
-                    # + lap 
-                    # + 0.01 * hausdorff_distance(out, tgt) + lap2
-                    # + lap 
-                    # + 0.001 * hausdorff_distance(out, tgt)
-                    # print(loss)
-                elif loss_type == 'mse':
-                    loss += ((out - tgt) ** 2).mean()
-                elif loss_type == 'pp':
-                    out = out.reshape(sample_size_u * sample_size_v, 3)
-                    tgt = tgt.reshape(num_eval_pts_u * num_eval_pts_v, 3)
-                    loss += pointcloud_pointcloud_distance(out, tgt)
-            else:
-                if loss_type == 'chamfer':
-                    loss += chamfer_distance(out, target)
-                elif loss_type == 'mse':
-                    loss += ((out - target) ** 2).mean()
-
-
-            
-
-            loss.sum().backward(retain_graph=True)
-            return loss
+        optimizer.zero_grad()
+        # encoder
+        target = target.reshape(1, resolution_u * resolution_v, 3).permute(0, 2, 1)
+        # print(target.shape)
+        encoder_output = encoder(target)
         
-        # inp_ctrl_pts_numpy = inp_ctrl_pts.detach().cpu().numpy().squeeze()
-        # fig = plt.figure()
-        # ax1 = fig.add_subplot(111, projection='3d', adjustable='box', proj_type='ortho', aspect='equal')
-        # ax1.plot_wireframe(inp_ctrl_pts_numpy[:, :, 0], inp_ctrl_pts_numpy[:, :, 1], inp_ctrl_pts_numpy[:, :, 2])
-        # plt.savefig('inp_ctrl_pts_numpy.png')
+        # decoder
+        encoder_output = encoder_output.view(1, num_ctrl_pts1, num_ctrl_pts2, 3).cuda()
         
-        if (i%100) < 30:
-            loss = opt1.step(closure)
-            lr_schedule1.step(loss)
-        else:
-            loss = opt2.step(closure)
-            lr_schedule2.step(loss)        
-        # with torch.no_grad():
-        #     inp_ctrl_pts[:, 0, :, :] = inp_ctrl_pts[:, 0, :, :].mean(1)
-        #     inp_ctrl_pts[:, -1, :, :] = inp_ctrl_pts[:, -1, :, :].mean(1)
-        #     inp_ctrl_pts[:, :, 0, :] = inp_ctrl_pts[:, :, -1, :] = (inp_ctrl_pts[:, :, 0, :] + inp_ctrl_pts[:, :, -1, :]) / 2
-
-        out = layer((torch.cat((inp_ctrl_pts,weights), -1), torch.cat((knot_rep_p_0,knot_int_u,knot_rep_p_1), -1), torch.cat((knot_rep_q_0,knot_int_v,knot_rep_q_1), -1)))
-        # target = target.reshape(1,num_eval_pts_u,num_eval_pts_v,3)
-        # out = out.reshape(1,num_eval_pts_u,num_eval_pts_v,3)
+        ones = torch.ones((encoder_output.size(0),encoder_output.size(1),encoder_output.size(2),1), requires_grad=True).cuda()
+        control_points = torch.cat((encoder_output,ones),-1)
+        
+        decoder_output = decoder(control_points).view(1, sample_size_u * sample_size_v, 3)
+        target = target.reshape(1, resolution_u * resolution_v, 3)
+        chamfer_loss = chamfer_distance(decoder_output, target)
+        laplacian_ctrlpts = laplacian_loss_unsupervised(encoder_output)
+        loss = chamfer_loss
+        # + 0.1 * laplacian_ctrlpts
+        
+        loss.backward(retain_graph=True)
+        optimizer.step()
+        # lr_schedule_optimizer.step(loss)        
 
         if loss.item() < 1e-6:
             print((time.time() - time1)/ (i + 1)) 
@@ -939,87 +807,7 @@ def main(config):
         
         pbar.set_description("Loss %s: %s" % (i+1, loss.item()))
     
-    # pbar = tqdm(range(num_epochs // 3))
-    # opt1 = torch.optim.Adam(iter([inp_ctrl_pts]), lr=0.5) 
-
-    # # opt2 = torch.optim.Adam(iter([knot_int_u, knot_int_v]), lr=1e-2)
-    # lr_schedule1 = torch.optim.lr_scheduler.ReduceLROnPlateau(opt1, patience=10, factor=0.5, verbose=True, min_lr=1e-4, 
-                                                            #   eps=1e-08, threshold=1e-4, threshold_mode='rel', cooldown=0,
-                                                            #   )
-    # for i in pbar:
-    #     # torch.cuda.empty_cache()
-    #     knot_rep_p_0 = torch.zeros(1,p+1).cuda()
-    #     knot_rep_p_1 = torch.zeros(1,p).cuda()
-    #     knot_rep_q_0 = torch.zeros(1,q+1).cuda()
-    #     knot_rep_q_1 = torch.zeros(1,q).cuda()
-
-
-    #     def closure():
-    #         opt1.zero_grad()
-    #         # opt2.zero_grad()
-    #         # out = layer(inp_ctrl_pts)
-    #         # Extract the first layer of the tensor
-
-    #         out = layer((torch.cat((inp_ctrl_pts,weights), -1), torch.cat((knot_rep_p_0,knot_int_u,knot_rep_p_1), -1), torch.cat((knot_rep_q_0,knot_int_v,knot_rep_q_1), -1)))
-
-    #         loss = 0
-    #         # loss += 0.001 * laplacian_loss(out, target)
-           
-
-    #         if ignore_uv:
-    #             # reg_loss, permute_cp = control_points_permute_closed_reg_loss(inp_ctrl_pts, ctr_pts_u, ctr_pts_v)
-    #             # print(reg_loss)
-    #             # print(permute_cp.shape)
-    #             # inp_ctrl_pts = permute_cp
-    #             lap = 0.001 * laplacian_loss_unsupervised(inp_ctrl_pts)
-    #             edges_loss = 0.005 * compute_edge_lengths(inp_ctrl_pts, num_ctrl_pts1, num_ctrl_pts2)
-    #             # lap2 = 0.001 * laplacian_loss_splinenet(out, target)
-    #             out = out.reshape(1, sample_size*sample_size, 3)
-    #             tgt = target.reshape(1, num_eval_pts_u*num_eval_pts_v, 3)
-    #             if loss_type == 'chamfer':
-    #                 loss += chamfer_distance(out, tgt) + lap
-    #                 # + edges_loss
-    #                 #  + 0.01 * hausdorff_distance(out, tgt)
-    #                 # + lap 
-    #                 # + 0.01 * hausdorff_distance(out, tgt) + lap2
-    #                 # + lap 
-    #                 # + 0.001 * hausdorff_distance(out, tgt)
-    #                 # print(loss)
-    #             elif loss_type == 'mse':
-    #                 loss += ((out - tgt) ** 2).mean()
-    #             elif loss_type == 'pp':
-    #                 out = out.reshape(sample_size * sample_size, 3)
-    #                 tgt = tgt.reshape(num_eval_pts_u * num_eval_pts_v, 3)
-    #                 loss += pointcloud_pointcloud_distance(out, tgt)
-    #         else:
-    #             if loss_type == 'chamfer':
-    #                 loss += chamfer_distance(out, target)
-    #             elif loss_type == 'mse':
-    #                 loss += ((out - target) ** 2).mean()
-
-
-            
-
-    #         loss.backward(retain_graph=True)
-    #         return loss
-        
-    #     # if (i%300) < 30:
-    #     loss = opt1.step(closure)
-    #     lr_schedule1.step(loss)
-    #     # else:
-    #         # loss = opt2.step(closure)        
-
-
-    #     out = layer((torch.cat((inp_ctrl_pts,weights), -1), torch.cat((knot_rep_p_0,knot_int_u,knot_rep_p_1), -1), torch.cat((knot_rep_q_0,knot_int_v,knot_rep_q_1), -1)))
-    #     # target = target.reshape(1,num_eval_pts_u,num_eval_pts_v,3)
-    #     # out = out.reshape(1,num_eval_pts_u,num_eval_pts_v,3)
-        
-    #     if loss.item() < 1e-6:
-    #         print((time.time() - time1)/ (i + 1)) 
-    #         break
-        
-    #     pbar.set_description("Loss %s: %s" % (i+1, loss.item()))
-    torch.save(layer.state_dict(), f'models/{object_name}_ctrpts_{ctr_pts}_eval_{resolution_u}x{ resolution_v}_reconstruct_{out_dim_u}x{out_dim_v}.pth')
+    # torch.save(layer.state_dict(), f'models/{object_name}_ctrpts_{ctr_pts}_eval_{resolution_u}x{ resolution_v}_reconstruct_{out_dim_u}x{out_dim_v}.pth')
     print((time.time() - time1)/ (num_epochs+1)) 
 
     # train_uspan_uv, train_vspan_uv = layer.getuvspan()
@@ -1027,20 +815,21 @@ def main(config):
     # print(inp_ctrl_pts)
 
     target_mpl = target.cpu().numpy().squeeze()
+    target_mpl = target_mpl.reshape(resolution_u, resolution_v, 3)
     # target_mpl = target_mpl.reshape(-1, 3)
     # print(out.shape)
-    predicted = out.detach().cpu().numpy().squeeze()
+    predicted = decoder_output.detach().cpu().numpy().squeeze()
     # predicted = predicted.reshape(-1, 3)
     # predictedknotu = utilities.generate_knot_vector(4, num_ctrl_pts1)
     # predictedknotv = utilities.generate_knot_vector(4, num_ctrl_pts2)
-    predictedweights = weights.detach().cpu().numpy().squeeze(0)
-    predictedctrlpts = inp_ctrl_pts.detach().cpu().numpy().squeeze()
+    # predictedweights = weights.detach().cpu().numpy().squeeze(0)
+    predictedctrlpts = encoder_output.detach().cpu().numpy().squeeze()
     # print(predictedweights.shape)
     # print(predictedctrlpts.shape)
-    predictedknotu = knot_int_u.detach().cpu().numpy().squeeze().tolist()
-    predictedknotu = [0., 0., 0., 0.] + predictedknotu + [1., 1., 1.]
-    predictedknotv = knot_int_v.detach().cpu().numpy().squeeze().tolist()
-    predictedknotv = [0., 0., 0., 0.] + predictedknotv + [1., 1., 1.]
+    # predictedknotu = knot_int_u.detach().cpu().numpy().squeeze().tolist()
+    # predictedknotu = [0., 0., 0., 0.] + predictedknotu + [1., 1., 1.]
+    # predictedknotv = knot_int_v.detach().cpu().numpy().squeeze().tolist()
+    # predictedknotv = [0., 0., 0., 0.] + predictedknotv + [1., 1., 1.]
 
     # Open the file in write mode
     with open('generated/u_test.ctrlpts', 'w') as f:
@@ -1058,35 +847,6 @@ def main(config):
                 # else:
                 #     f.write(';')
 
-    with open('generated/u_test.weights', 'w') as f:
-        # Loop over the array rows
-        x = predictedweights
-
-        for row in x:
-            # Flatten the row to a 1D array
-            row_flat = row.reshape(-1)
-            # Write the row values to the file as a string separated by spaces
-            f.write(','.join([str(x) for x in row_flat]) + '\n')
-
-    with open('generated/u_test.knotu', 'w') as f:
-        # Loop over the array rows
-        x = predictedknotu
-
-        for row in x:
-            # Flatten the row to a 1D array
-    
-            # Write the row values to the file as a string separated by spaces
-            f.write(','.join([str(row)]) + '\n')
-
-    with open('generated/u_test.knotv', 'w') as f:
-        # Loop over the array rows
-        x = predictedknotv
-
-        for row in x:
-            # Flatten the row to a 1D array
-   
-            # Write the row values to the file as a string separated by spaces
-            f.write(','.join([str(row)]) + '\n')
 
 
     # ctrlpts = ctrlpts.reshape(num_ctrl_pts1, num_ctrl_pts2, 3)
@@ -1108,6 +868,7 @@ def main(config):
     ax2 = fig.add_subplot(152, projection='3d', adjustable='box', proj_type='ortho', aspect='equal')
     # ax2.set_box_aspect([1,1,1])
     # ax2.plot_wireframe(predictedctrlpts[:, :,0], predictedctrlpts[:, :, 1], predictedctrlpts[:, :, 2], color='blue', label=['Predicted Control Points'])
+    predicted = predicted.reshape(sample_size_u, sample_size_v, 3)
     ax2.plot_wireframe(predicted[:, :, 0], predicted[:, :,1], predicted[:, :,2], color='lightgreen', label='Predicted Surface')
     adjust_plot(ax2)
 
@@ -1142,23 +903,10 @@ def main(config):
     ax4 = fig.add_subplot(154, projection='3d', adjustable='box', proj_type='ortho', aspect='equal')
     # ax4.set_box_aspect([1,1,1])
 
-    layer = SurfEval(num_ctrl_pts1, num_ctrl_pts2, dimension=3, p=p, q=q, out_dim_u=out_dim_u, out_dim_v=out_dim_v, method='tc', dvc='cuda').cuda()
-    knot_rep_p_0 = torch.zeros(1,p+1).cuda()
-    knot_rep_p_1 = torch.zeros(1,p).cuda()
-    knot_rep_q_0 = torch.zeros(1,q+1).cuda()
-    knot_rep_q_1 = torch.zeros(1,q).cuda()
-    # Extract the first layer of the tensor
-    first_layer_int = inp_ctrl_pts[:, 0, :, :]
-    first_layer_weights = weights[:, 0, :, :]
-    # Replicate the first layer to match the desired size
-    # extended_inp_ctrl_pts = torch.cat((first_layer_int.unsqueeze(1), inp_ctrl_pts), dim=1)
-    # first_column_int = extended_inp_ctrl_pts[:, :, 0, :]
-    # extended_inp_ctrl_pts = torch.cat((first_column_int.unsqueeze(2), extended_inp_ctrl_pts), dim=2)
-    # extended_weights = torch.cat((first_layer_weights.unsqueeze(1), weights), dim=1)
-    # first_column_weights = extended_weights[:, :, 0, :]
-    # extended_weights = torch.cat((first_column_weights.unsqueeze(2), extended_weights), dim=2)
+    new_decoder = SurfEvalBS(num_ctrl_pts1, num_ctrl_pts2, dimension=3, p=p, q=q, out_dim_u=out_dim_u, out_dim_v=out_dim_v, method='tc', dvc='cuda').cuda()
+   
     # print(extended_inp_ctrl_pts.shape)
-    out2 = layer((torch.cat((inp_ctrl_pts, weights), -1), torch.cat((knot_rep_p_0,knot_int_u,knot_rep_p_1), -1), torch.cat((knot_rep_q_0,knot_int_v,knot_rep_q_1), -1)))
+    out2 = new_decoder(control_points)
     out2 = out2.detach().cpu().numpy().squeeze(0).reshape(out_dim_u, out_dim_v, 3)
     ax4.plot_wireframe(out2[:, :, 0], out2[:, :, 1], out2[:, :, 2], color='cyan', label='Reconstructed Surface')
     adjust_plot(ax4)
