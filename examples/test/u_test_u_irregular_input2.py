@@ -6,7 +6,7 @@ import numpy as np
 from DuckyFittingOriginal import read_weights
 from examples.splinenet import DGCNNControlPoints, get_graph_feature
 from examples.test.mesh_reconstruction import reconstructed_mesh
-from examples.test.test_dgcnn import DGCNN, DGCNN_without_grad
+# from examples.test.test_dgcnn import DGCNN, DGCNN_without_grad
 torch.manual_seed(120)
 from tensorboard_logger import configure, log_value
 from tqdm import tqdm
@@ -681,7 +681,7 @@ def compute_edge_lengths(points, u, v):
 
 def main():
  
-    gt_path = "../../meshes/duck_irregular_shape"
+    gt_path = "../../meshes/dfs_duck"
     ctr_pts = 15
     # resolution_u = 64
     # resolution_v = 64
@@ -689,7 +689,7 @@ def main():
     
     object_name = gt_path.split("/")[-1].split(".")[0]
     
-    num_epochs = 1
+    num_epochs = 550
     loss_type = "chamfer"
     ignore_uv = True
     axis = "z"
@@ -702,8 +702,8 @@ def main():
     
     out_dim_u = 60
     out_dim_v = 60
-    ctr_pts_u = 20
-    ctr_pts_v = 11
+    ctr_pts_u = 25
+    ctr_pts_v = 12
 
     resolution_v = 100
     
@@ -714,7 +714,7 @@ def main():
 
     input_point_list = []
     
-    with open('../../meshes/duck_irregular_shape_2550.txt', 'r') as f:
+    with open('../../meshes/dfs_duck_900.txt', 'r') as f:
     # with open('ex_ducky.off', 'r') as f:
     
         lines = f.readlines()
@@ -879,7 +879,7 @@ def main():
             # out = layer(inp_ctrl_pts)
             # Extract the first layer of the tensor
 
-            out, out_partial = layer((torch.cat((inp_ctrl_pts,weights), -1), torch.cat((knot_rep_p_0,knot_int_u,knot_rep_p_1), -1), torch.cat((knot_rep_q_0,knot_int_v,knot_rep_q_1), -1)))
+            out = layer((torch.cat((inp_ctrl_pts,weights), -1), torch.cat((knot_rep_p_0,knot_int_u,knot_rep_p_1), -1), torch.cat((knot_rep_q_0,knot_int_v,knot_rep_q_1), -1)))
 
             # if i < 600:
             loss = 0
@@ -977,7 +977,7 @@ def main():
         #     inp_ctrl_pts[:, -1, :, :] = inp_ctrl_pts[:, -1, :, :].mean(1)
         #     inp_ctrl_pts[:, :, 0, :] = inp_ctrl_pts[:, :, -1, :] = (inp_ctrl_pts[:, :, 0, :] + inp_ctrl_pts[:, :, -1, :]) / 2
 
-        out, out_partial = layer((torch.cat((inp_ctrl_pts,weights), -1), torch.cat((knot_rep_p_0,knot_int_u,knot_rep_p_1), -1), torch.cat((knot_rep_q_0,knot_int_v,knot_rep_q_1), -1)))
+        out = layer((torch.cat((inp_ctrl_pts,weights), -1), torch.cat((knot_rep_p_0,knot_int_u,knot_rep_p_1), -1), torch.cat((knot_rep_q_0,knot_int_v,knot_rep_q_1), -1)))
         # target = target.reshape(1,num_eval_pts_u,num_eval_pts_v,3)
         # out = out.reshape(1,num_eval_pts_u,num_eval_pts_v,3)
 
@@ -1067,7 +1067,7 @@ def main():
     #         break
         
     #     pbar.set_description("Loss %s: %s" % (i+1, loss.item()))
-    torch.save(layer.state_dict(), f'models/{object_name}_ctrpts_{ctr_pts}_eval_irregular_reconstruct_{out_dim_u}x{out_dim_v}.pth')
+    # torch.save(layer.state_dict(), f'models/{object_name}_ctrpts_{ctr_pts}_eval_irregular_reconstruct_{out_dim_u}x{out_dim_v}.pth')
     print((time.time() - time1)/ (num_epochs+1)) 
 
     # train_uspan_uv, train_vspan_uv = layer.getuvspan()
@@ -1206,7 +1206,7 @@ def main():
     # first_column_weights = extended_weights[:, :, 0, :]
     # extended_weights = torch.cat((first_column_weights.unsqueeze(2), extended_weights), dim=2)
     # print(extended_inp_ctrl_pts.shape)
-    out2, _ = layer((torch.cat((inp_ctrl_pts, weights), -1), torch.cat((knot_rep_p_0,knot_int_u,knot_rep_p_1), -1), torch.cat((knot_rep_q_0,knot_int_v,knot_rep_q_1), -1)))
+    out2 = layer((torch.cat((inp_ctrl_pts, weights), -1), torch.cat((knot_rep_p_0,knot_int_u,knot_rep_p_1), -1), torch.cat((knot_rep_q_0,knot_int_v,knot_rep_q_1), -1)))
     out2 = out2.detach().cpu().numpy().squeeze(0).reshape(out_dim_u, out_dim_v, 3)
     ax4.plot_wireframe(out2[:, :, 0], out2[:, :, 1], out2[:, :, 2], color='cyan', label='Reconstructed Surface')
     adjust_plot(ax4)
@@ -1214,12 +1214,12 @@ def main():
     # target_mpl = target_mpl.reshape(resolution_u, resolution_v, 3)
     predicted = predicted.reshape(sample_size_u, sample_size_v, 3)
     
-    out_first_row = out_first_row.detach().cpu().numpy().squeeze(0).reshape(-1, sample_size_v, 3)
-    ax5 = fig.add_subplot(155, projection='3d', adjustable='box', proj_type='ortho', aspect='equal')
-    # error_map = (((predicted - target_mpl) ** 2) / target_mpl).sum(-1)
-    ax5.plot_wireframe(out_first_row[:, :, 0], out_first_row[:, :, 1], out_first_row[:, :, 2], color='lightgreen', label='Predicted Surface')
-    # im5 = ax5.imshow(error_map, cmap='jet', interpolation='none', extent=[0, 128, 0, 128], vmin=-0.001, vmax=0.001)
-    adjust_plot(ax5)
+    # out_first_row = out_first_row.detach().cpu().numpy().squeeze(0).reshape(-1, sample_size_v, 3)
+    # ax5 = fig.add_subplot(155, projection='3d', adjustable='box', proj_type='ortho', aspect='equal')
+    # # error_map = (((predicted - target_mpl) ** 2) / target_mpl).sum(-1)
+    # ax5.plot_wireframe(out_first_row[:, :, 0], out_first_row[:, :, 1], out_first_row[:, :, 2], color='lightgreen', label='Predicted Surface')
+    # # im5 = ax5.imshow(error_map, cmap='jet', interpolation='none', extent=[0, 128, 0, 128], vmin=-0.001, vmax=0.001)
+    # adjust_plot(ax5)
     plt.show()
     # error_map = (((predicted - target_mpl) ** 2) / target_mpl).sum(-1)
 
