@@ -367,6 +367,34 @@ def chamfer_distance_each_row(pred, gt, sqrt=False):
         dist2, _ = torch.min(dist, dim=0)
         total_cd += torch.mean(dist1, 0) + torch.mean(dist2, 0)
     return total_cd / 2.0 / row
+ 
+def hausdorff_distance_each_row(pred, gt):
+    """
+    Computes the Hausdorff Distance between two point clouds
+    :param pred: Prediction: B x N x 3
+    :param gt: ground truth: B x M x 3
+    :return: Hausdorff Distance
+    """
+    if isinstance(pred, np.ndarray):
+        pred = Variable(torch.from_numpy(pred.astype(np.float32))).cuda()
+
+    if isinstance(gt, np.ndarray):
+        gt = Variable(torch.from_numpy(gt.astype(np.float32))).cuda()
+
+    # pred = torch.unsqueeze(pred, 1)
+    # gt = torch.unsqueeze(gt, 2)
+    row, col = pred.shape[0], pred.shape[1]
+    total_cd = 0
+    for i in range(row):
+        gt_row = gt[i]
+        pred_row = pred[i]
+
+        diff = pred_row.unsqueeze(0) - gt_row.unsqueeze(1)
+
+        row_max = torch.max(torch.min(diff, dim=1)[0])
+        col_max = torch.max(torch.min(diff, dim=0)[0])
+        total_cd += torch.max(row_max, col_max)
+    return total_cd / row / 2.0
        
 def sinkhorn_loss(pred, gt, epsilon=0.1, n_iters=5):
     """
@@ -681,7 +709,7 @@ def compute_edge_lengths(points, u, v):
 
 def main():
  
-    gt_path = "../../meshes/dfs_duck"
+    gt_path = "../../meshes/plane_dynamic"
     ctr_pts = 15
     # resolution_u = 64
     # resolution_v = 64
@@ -689,10 +717,10 @@ def main():
     
     object_name = gt_path.split("/")[-1].split(".")[0]
     
-    num_epochs = 550
+    num_epochs = 500
     loss_type = "chamfer"
     ignore_uv = True
-    axis = "z"
+    axis = "y"
     
     def get_current_time():
         return time.strftime("%m%d%H%M%S", time.localtime())
@@ -700,10 +728,10 @@ def main():
 
     configure("logs/tensorboard/{}".format(f'{object_name}_irregular_input/{current_time}'), flush_secs=2)
     
-    out_dim_u = 60
-    out_dim_v = 60
-    ctr_pts_u = 25
-    ctr_pts_v = 12
+    out_dim_u = 100
+    out_dim_v = 100
+    ctr_pts_u = 7
+    ctr_pts_v = 7
 
     resolution_v = 100
     
@@ -714,7 +742,7 @@ def main():
 
     input_point_list = []
     
-    with open('../../meshes/dfs_duck_900.txt', 'r') as f:
+    with open('../../meshes/plane_dynamic_900.txt', 'r') as f:
     # with open('ex_ducky.off', 'r') as f:
     
         lines = f.readlines()
@@ -747,15 +775,17 @@ def main():
         target = torch.tensor(vertex_positions).float().cuda()
         # print(target.shape)
         target_list.append(target)
-        for i in range(len(target_list)):
-            target_list[i] /= range_coord
+        
+        # target_list = target_list[:4]
+        # resolution_u = 4
+        # for i in range(len(target_list)):
+        #     target_list[i] /= range_coord
         # target = torch.tensor(vertex_positions).reshape(1, resolution_u, resolution_v, 3).float().cuda()
         # permute the rows in target
         # target = target[:, :, torch.randperm(resolution), :]
 
         sample_size_u = resolution_u
         sample_size_v = resolution_v
-        
         
     # with open('../../meshes/duck_irregular_shape_930.off', 'r') as f:
     # # with open('ex_ducky.off', 'r') as f:
@@ -811,7 +841,7 @@ def main():
     dgcnncts = DGCNNControlPoints(11, num_points=11, mode=1).cuda()
     
     # opt1 = torch.optim.Adam(iter(list(dgcnncts.parameters()) + [inp_ctrl_pts]), lr=0.05) 
-    opt1 = torch.optim.Adam(iter([inp_ctrl_pts, weights]), lr=0.5) 
+    opt1 = torch.optim.Adam(iter([inp_ctrl_pts, weights]), lr=5) 
     # opt2 = torch.optim.Adam(iter([knot_int_u, knot_int_v]), lr=1e-2)
     lr_schedule1 = torch.optim.lr_scheduler.ReduceLROnPlateau(opt1, patience=10, factor=0.5, verbose=True, min_lr=1e-4, 
                                                               eps=1e-08, threshold=1e-4, threshold_mode='rel', cooldown=0,
@@ -870,7 +900,8 @@ def main():
             inp_ctrl_pts[:, :, 0, :] = inp_ctrl_pts[:, :, -3, :] = (inp_ctrl_pts[:, :, 0, :] + inp_ctrl_pts[:, :, -3, :]) / 2
             inp_ctrl_pts[:, :, 1, :] = inp_ctrl_pts[:, :, -2, :] = (inp_ctrl_pts[:, :, 1, :] + inp_ctrl_pts[:, :, -2, :]) / 2
             inp_ctrl_pts[:, :, 2, :] = inp_ctrl_pts[:, :, -1, :] = (inp_ctrl_pts[:, :, 2, :] + inp_ctrl_pts[:, :, -1, :]) / 2
-       
+            pass
+        
         def closure():
             # if i < 600:
             opt1.zero_grad()
@@ -893,13 +924,13 @@ def main():
                 # print(reg_loss)
                 # print(permute_cp.shape)
                 # inp_ctrl_pts = permute_cp
-                lap =  0.10 * laplacian_loss_unsupervised(inp_ctrl_pts)
-                lap2 = 0.00 * laplacian_loss_unsupervised(out)
+                lap = laplacian_loss_unsupervised(inp_ctrl_pts)
+                lap2 = laplacian_loss_unsupervised(out)
                 # lap3 = 0.00 * laplacian_loss_splinenet(out, target)
                 edges_loss = 0.10 * compute_edge_lengths(inp_ctrl_pts, num_ctrl_pts1, num_ctrl_pts2)
                 # compute dif between first column and last column  of control points
                 input_ctrl_pts_alter = inp_ctrl_pts.reshape(num_ctrl_pts1, num_ctrl_pts2, 3)
-                close_loss_column = 0.20 * (
+                close_loss_column =  (
                                             torch.norm(input_ctrl_pts_alter[:, 0, :] - input_ctrl_pts_alter[:, -3, :]) +
                                             torch.norm(input_ctrl_pts_alter[:, 1, :] - input_ctrl_pts_alter[:, -2, :]) +
                                             torch.norm(input_ctrl_pts_alter[:, 2, :] - input_ctrl_pts_alter[:, -1, :])
@@ -918,9 +949,11 @@ def main():
                 # print(tgt_knn.shape)
                 # print(input_ctrl_pts_knn.shape)
                 if loss_type == 'chamfer':
-                    # .018018752336502075
-# 0.022206000983715057
-                    loss += 0.899 * chamfer_distance_each_row(out, target_list) + lap + close_loss_column
+
+                    loss += 0.9 * chamfer_distance_each_row(out, target_list) + 0.1 * lap + 0.2 * close_loss_column
+                    # + 0.20 * close_loss_column
+                    # + 1 * hausdorff_distance_each_row(out, target_list) 
+                    # lap + close_loss_column
                     # + close_loss_column
                     log_value('chamfer_distance', chamfer_distance_each_row(out, target_list), i)
                     log_value('laplacian_loss', lap * 10, i)
