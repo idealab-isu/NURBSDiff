@@ -56,7 +56,8 @@ __device__ __forceinline__ void basis_funs(int uspan_i, float u, int p, float* U
     }
     N[i*col+j] = saved;
   }
-
+    delete[] left;   // Free memory after use
+    delete[] right;  // Free memory after use
 }
 
 
