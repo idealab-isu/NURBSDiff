@@ -8,9 +8,9 @@ import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
 from matplotlib import cm
 from geomdl import exchange
-from geomdl.visualization import VisMPL
+# from geomdl.visualization import VisMPL
 from geomdl import compatibility
-import offset_eval as off
+# import offset_eval as off
 
 SMALL_SIZE = 12
 MEDIUM_SIZE = 16
@@ -59,7 +59,7 @@ def main():
         target = target_eval_layer(target_ctrl_pts).float()
 
         PTS = target.detach().numpy().squeeze()
-        Max_size = off.Max_size(np.reshape(PTS, [1, num_eval_pts_u * num_eval_pts_v, 3]))
+        # Max_size = off.Max_size(np.reshape(PTS, [1, num_eval_pts_u * num_eval_pts_v, 3]))
         inp_ctrl_pts = torch.nn.Parameter(torch.rand((1,num_ctrl_pts1,num_ctrl_pts2,3), requires_grad=True).float())
 
     elif case=='Shark':
@@ -75,9 +75,9 @@ def main():
         target_ctrl_pts = torch.from_numpy(np.concatenate([ctrlpts,weights],axis=-1)).view(1,num_ctrl_pts1,num_ctrl_pts2,4)
         target_eval_layer = SurfEval(num_ctrl_pts1, num_ctrl_pts2, knot_u=knot_u, knot_v=knot_v, dimension=3, p=3, q=3, out_dim_u=num_eval_pts_u, out_dim_v=num_eval_pts_v)
         target = target_eval_layer(target_ctrl_pts).float()
-        inp_ctrl_pts = torch.nn.Parameter(torch.rand((1,num_ctrl_pts1,num_ctrl_pts2,4), requires_grad=True).float())
+        inp_ctrl_pts = torch.nn.Parameter(torch.rand((1,num_ctrl_pts1,num_ctrl_pts2,4), requires_grad=True))
 
-    layer = SurfEval(num_ctrl_pts1, num_ctrl_pts2, knot_u=knot_u, knot_v=knot_v, dimension=3, p=3, q=3, out_dim_u=num_eval_pts_u, out_dim_v=num_eval_pts_v, dvc='cpp')
+    layer = SurfEval(num_ctrl_pts1, num_ctrl_pts2, knot_u=knot_u, knot_v=knot_v, dimension=3, p=3, q=3, out_dim_u=num_eval_pts_u, out_dim_v=num_eval_pts_v, device='cpu')
     opt = torch.optim.LBFGS(iter([inp_ctrl_pts]), lr=1.0, max_iter=5)
     pbar = tqdm(range(100))
 
@@ -86,7 +86,7 @@ def main():
         target = target.reshape(1,num_eval_pts_u*num_eval_pts_v,3)
         def closure():        
             opt.zero_grad()
-            weights = torch.ones(1,num_ctrl_pts1, num_ctrl_pts2, 1)
+            weights = torch.ones(1,num_ctrl_pts1, num_ctrl_pts2, 1, dtype=torch.float64)
             out = layer(torch.cat((inp_ctrl_pts, weights), axis=-1))
             # out = layer(inp_ctrl_pts)
             # length1 = ((out[:,0:-1,:,:]-out[:,1:,:,:])**2).sum(-1).squeeze()
@@ -106,7 +106,7 @@ def main():
         #     inp_ctrl_pts[:,-1,:,:] = (inp_ctrl_pts[:,-1,:,:]).mean(1)
         #     inp_ctrl_pts[:,:,0,:] = inp_ctrl_pts[:,:,-1,:] = (inp_ctrl_pts[:,:,0,:] + inp_ctrl_pts[:,:,-1,:])/2
 
-        weights = torch.ones(1,num_ctrl_pts1, num_ctrl_pts2, 1)
+        weights = torch.ones(1,num_ctrl_pts1, num_ctrl_pts2, 1, dtype=torch.float64)
         out = layer(torch.cat((inp_ctrl_pts, weights), axis=-1))
         # out = layer(inp_ctrl_pts)
         # length1 = ((out[:,0:-1,:,:]-out[:,1:,:,:])**2).sum(-1).squeeze()

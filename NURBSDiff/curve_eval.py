@@ -1,101 +1,77 @@
 import torch
 import numpy as np
 from torch import nn
-from torch.autograd import Function
-from torch.autograd import Variable
-from NURBSDiff.curve_eval_cpp import forward as cpp_forward, backward as cpp_backward, pre_compute_basis as cpp_pre_compute_basis
-from NURBSDiff.curve_eval_cuda import pre_compute_basis, forward, backward
-from .utils import gen_knot_vector
+from einops import einsum
+from .utils import gen_knot_vector, find_span_torch, basis_funs_torch
 torch.manual_seed(120)
+DELTA = 1e-8
 
 
 
 class CurveEval(torch.nn.Module):
     """
-    We can implement our own custom autograd Functions by subclassing
-    torch.autograd.Function and implementing the forward and backward passes
-    which operate on Tensors.
+    NURBS curve evaluation using pure PyTorch with einops for clarity.
+    Evaluates NURBS curves given control points and parameters.
     """
-    def __init__(self, m, knot_v=None,  dimension=3, p=2, out_dim=32, method='tc', dvc='cuda'):
+    def __init__(self, m, knot_v=None, dimension=3, p=2, out_dim=32, device='cpu'):
         super(CurveEval, self).__init__()
         self.m = m
         self._dimension = dimension
         self.p = p
+        self.device = device
+
+        # Initialize knot vector
         if knot_v is not None:
-            self.U = knot_v
+            self.U = torch.Tensor(knot_v).to(device)
         else:
-            self.U = torch.Tensor(np.array(gen_knot_vector(self.p, self.m)))
-        self.u = torch.linspace(0.0, 1.0, steps=out_dim,dtype=torch.float32)
-        self.method = method
-        self.dvc = dvc
-        if self.dvc == 'cuda':
-            self.U = self.U.cuda()
-            self.u = self.u.cuda()
-            self.uspan, self.Nu = pre_compute_basis(self.u, self.U, m, p, out_dim, self._dimension)
-        else:
-            self.uspan, self.Nu = cpp_pre_compute_basis(self.u, self.U, m, p, out_dim, self._dimension)
+            self.U = torch.Tensor(np.array(gen_knot_vector(self.p, self.m))).to(device)
+
+        # Parameter values to evaluate at
+        self.u = torch.linspace(0.0 + DELTA, 1.0 - DELTA, steps=out_dim, dtype=torch.float32).to(device)
+
+        # Pre-compute basis functions
+        self._precompute_basis()
+
+    def _precompute_basis(self):
+        """Pre-compute basis functions and span indices for all parameter values"""
+        self.uspan = torch.zeros(self.u.shape[0], dtype=torch.long, device=self.device)
+        self.Nu = torch.zeros(self.u.shape[0], self.p+1, dtype=torch.float32, device=self.device)
+
+        for i in range(self.u.shape[0]):
+            self.uspan[i] = find_span_torch(self.m, self.p, self.u[i], self.U)
+            self.Nu[i] = basis_funs_torch(self.uspan[i], self.u[i], self.p, self.U)
 
 
-    def forward(self,input):
+    def forward(self, ctrl_pts):
         """
-        In the forward pass we receive a Tensor containing the input and return
-        a Tensor containing the output. ctx is a context object that can be used
-        to stash information for backward computation. You can cache arbitrary
-        objects for use in the backward pass using the ctx.save_for_backward method.
+        Evaluate NURBS curve using einops for clean tensor operations.
+
+        Args:
+            ctrl_pts: Control points of shape (batch, m+1, dimension+1)
+                     where the last channel is the weight
+
+        Returns:
+            curves: Evaluated curve points of shape (batch, out_dim, dimension)
         """
-        # input will be of dimension (batch_size, m+1, n+1, dimension+1)
+        # Create index grid for gathering control points
+        # For each u[i], we need control points in the local support
+        # Shape: (out_dim, p+1)
+        u_indices = self.uspan.unsqueeze(1) - self.p + torch.arange(self.p+1, device=ctrl_pts.device)
 
-        if self.method == 'cpp':
-            out = CurveEvalFunc.apply(input, self.uspan, self.Nu, self.u, self.m, self.p, self._dimension, self.dvc)
-            return out
-        elif self.method == 'tc':
-            # input[:,:,:self._dimension] = input[:,:,:self._dimension]*input[:,:,self._dimension].unsqueeze(-1)
-            curves = self.Nu[:,0].unsqueeze(-1)*input[:,(self.uspan-self.p).type(torch.LongTensor),:]
-            for j in range(1,self.p+1):
-                curves += self.Nu[:,j].unsqueeze(-1)*input[:,(self.uspan-self.p+j).type(torch.LongTensor),:]
-            return curves[:,:,:self._dimension]/curves[:,:,self._dimension].unsqueeze(-1)
+        # Gather relevant control points
+        # Shape: (batch, out_dim, p+1, dimension+1)
+        ctrl_u = ctrl_pts[:, u_indices]
 
+        # Apply basis functions using einops einsum
+        # Nu: (out_dim, p+1)
+        # ctrl_u: (batch, out_dim, p+1, dimension+1)
+        # Result: (batch, out_dim, dimension+1)
+        curves_w = einsum(
+            ctrl_u, self.Nu,
+            'batch u p dim, u p -> batch u dim'
+        )
 
+        # Divide by weight to get final curve points (perspective division for NURBS)
+        curves = curves_w[..., :self._dimension] / curves_w[..., self._dimension:self._dimension+1]
 
-class CurveEvalFunc(torch.autograd.Function):
-
-    @staticmethod
-    def forward(ctx, ctrl_pts, uspan, Nu, u, m, p, _dimension, _device):
-        ctx.save_for_backward(ctrl_pts)
-        ctx.uspan = uspan
-        ctx.Nu = Nu
-        ctx.u = u
-        ctx.m = m
-        ctx.p = p
-        ctx._dimension = _dimension
-        ctx._device = _device
-        if _device == 'cuda':
-            curves = forward(ctrl_pts, uspan, Nu, u, m, p, _dimension)
-        else:
-            curves = cpp_forward(ctrl_pts.cpu(), uspan.cpu(), Nu.cpu(), u.cpu(), m, p, _dimension)
-        ctx.curves = curves
-        return curves[:,:,:_dimension]/curves[:,:,_dimension].unsqueeze(-1)
-
-    @staticmethod
-    def backward(ctx, grad_output):
-        ctrl_pts,  = ctx.saved_tensors
-        uspan = ctx.uspan
-        Nu = ctx.Nu
-        u = ctx.u
-        m = ctx.m
-        p = ctx.p
-        _device = ctx._device
-        _dimension = ctx._dimension
-        curves = ctx.curves
-        grad_cw = torch.zeros((grad_output.size(0),grad_output.size(1),_dimension+1),dtype=torch.float32)
-        if _device == 'cuda':
-            grad_cw = grad_cw.cuda()
-        grad_cw[:,:,:_dimension] = grad_output
-        for d in range(_dimension):
-            grad_cw[:,:,_dimension] += grad_output[:,:,d]/curves[:,:,_dimension]
-        if _device == 'cuda':
-            grad_ctrl_pts  = backward(grad_cw, ctrl_pts, uspan, Nu, u, m, p, _dimension)
-        else:
-            grad_ctrl_pts  = cpp_backward(grad_cw, ctrl_pts, uspan, Nu, u, m, p, _dimension)
-
-        return Variable(grad_ctrl_pts[0]), None, None, None, None, None, None, None
+        return curves

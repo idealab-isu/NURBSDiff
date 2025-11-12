@@ -1,41 +1,32 @@
-import os
 from setuptools import setup, find_packages
-from torch.utils.cpp_extension import BuildExtension, CppExtension,CUDAExtension
 
-try:
-    setup(
-        name='NURBSDiff',
-        ext_modules=[
-            CppExtension(name='NURBSDiff.curve_eval_cpp',
-                sources=['NURBSDiff/csrc/curve_eval.cpp','NURBSDiff/csrc/utils.cpp'],
-                extra_include_paths=['NURBSDiff/csrc/utils.h','NURBSDiff/csrc/curve_eval.h']),
-            CppExtension(name='NURBSDiff.surf_eval_cpp',
-                sources=['NURBSDiff/csrc/surf_eval.cpp','NURBSDiff/csrc/utils.cpp'],
-                extra_include_paths=['NURBSDiff/csrc/utils.h','NURBSDiff/csrc/surf_eval.h']),
-            CUDAExtension(name='NURBSDiff.curve_eval_cuda',
-                sources=['NURBSDiff/csrc/curve_eval_cuda.cpp',
-                'NURBSDiff/csrc/curve_eval_cuda_kernel.cu']),
-            CUDAExtension(name='NURBSDiff.surf_eval_cuda',
-                sources=['NURBSDiff/csrc/surf_eval_cuda.cpp',
-                'NURBSDiff/csrc/surf_eval_cuda_kernel.cu']),
-        ],
-        cmdclass={
-            'build_ext': BuildExtension
-        },
-        packages=find_packages(),)
-except:
-    print('installation of NURBSDiff with GPU wasnt successful, installing CPU version')
-    setup(
-        name='NURBSDiff',
-        ext_modules=[
-            CppExtension(name='NURBSDiff.curve_eval_cpp',
-                sources=['NURBSDiff/csrc/curve_eval.cpp','NURBSDiff/csrc/utils.cpp'],
-                extra_include_paths=['NURBSDiff/csrc/utils.h','NURBSDiff/csrc/curve_eval.h']),
-            CppExtension(name='NURBSDiff.surf_eval_cpp',
-                sources=['NURBSDiff/csrc/surf_eval.cpp','NURBSDiff/csrc/utils.cpp'],
-                extra_include_paths=['NURBSDiff/csrc/utils.h','NURBSDiff/csrc/surf_eval.h']),
-        ],
-        cmdclass={
-            'build_ext': BuildExtension
-        },
-        packages=find_packages(),)
+setup(
+    name='NURBSDiff',
+    version='2.0.0',
+    description='Pure PyTorch implementation for differentiable NURBS curve and surface evaluation',
+    author='Your Name',
+    author_email='your.email@example.com',
+    url='https://github.com/your-repo/NURBSDiff',
+    packages=find_packages(),
+    install_requires=[
+        'torch>=1.9.0',
+        'numpy>=1.19.0',
+        'einops>=0.6.0',
+    ],
+    extras_require={
+        'examples': ['pytorch3d', 'geomdl', 'matplotlib', 'tqdm'],
+        'dev': ['pytest>=7.0.0', 'pytest-cov'],
+    },
+    python_requires='>=3.7',
+    classifiers=[
+        'Development Status :: 4 - Beta',
+        'Intended Audience :: Science/Research',
+        'License :: OSI Approved :: MIT License',
+        'Programming Language :: Python :: 3',
+        'Programming Language :: Python :: 3.7',
+        'Programming Language :: Python :: 3.8',
+        'Programming Language :: Python :: 3.9',
+        'Programming Language :: Python :: 3.10',
+        'Topic :: Scientific/Engineering :: Artificial Intelligence',
+    ],
+)

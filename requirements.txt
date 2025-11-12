@@ -1,0 +1,13 @@
+# Core dependencies
+torch>=1.9.0
+numpy>=1.19.0
+einops>=0.6.0
+
+# For examples and visualization
+geomdl
+matplotlib
+tqdm
+
+# For testing
+pytest>=7.0.0
+pytest-cov
