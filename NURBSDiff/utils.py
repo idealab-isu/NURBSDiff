@@ -49,7 +49,7 @@ def find_span_torch(n, p, u, U, eps=1e-4):
 
     # Special case
     if abs(u_val - U[n+1].item()) < eps:
-        return n - 1
+        return n
 
     # Binary search
     low = p
